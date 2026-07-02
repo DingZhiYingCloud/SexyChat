@@ -1,0 +1,810 @@
+{% load static %}
+<!-- 顶部通栏导航组件：依赖 Bootstrap 5.3 + Bootstrap Icons（已在 template.html 统一引入） -->
+<!-- 布局：移动端横向滚动 + 左右渐变遮罩 + 底部进度条；桌面端横排 + hover 下拉 -->
+<!-- i18n 字典须在导航 HTML 之前 include，确保 jkfI18n 在菜单渲染前已定义 -->
+{% include '子组件/i18n字典.html' %}
+
+<style>
+  /* === 顶部通栏导航样式（JKF 风格纯黑深色顶栏）=== */
+  /* 颜色/间距统一以 CSS 变量集中管理，避免硬编码 */
+  :root {
+    --jkf-nav-bg: #1a1a1a;            /* 顶栏背景起始色 */
+    --jkf-nav-bg-end: #0d0d0d;        /* 顶栏背景结束色（微渐变） */
+    --jkf-nav-text: #f0f0f0;          /* 主文字色 */
+    --jkf-nav-text-muted: #b0b0b0;    /* 次要文字色 */
+    --jkf-nav-hover: #ffc107;         /* hover 金色高亮 */
+    --jkf-nav-star: #ffc107;          /* 五角星金黄 */
+    --jkf-nav-heart: #ef4444;         /* 爱心红 */
+    --jkf-nav-divider: #3a3a3a;       /* 分隔符/边框 */
+    --jkf-nav-dropdown-bg: #2a2a2a;   /* 下拉菜单背景 */
+    --jkf-nav-dropdown-hover: #3a3a3a;/* 下拉项 hover 背景 */
+    --jkf-nav-login-bg: #ffc107;      /* 登录按钮背景 */
+    --jkf-nav-login-text: #1a1a1a;    /* 登录按钮文字 */
+    --jkf-nav-height: 56px;           /* 顶栏高度 */
+    --jkf-nav-transition: 200ms;      /* 统一过渡时长 */
+    --jkf-nav-mask-size: 40px;       /* 左右渐变遮罩宽度 */
+    --jkf-nav-scrollbar-h: 3px;       /* 底部滚动进度条高度 */
+    --jkf-font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .jkf-navbar {
+    font-family: var(--jkf-font-family);
+    background: linear-gradient(180deg, var(--jkf-nav-bg) 0%, var(--jkf-nav-bg-end) 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    border-bottom: 1px solid var(--jkf-nav-divider);
+    position: relative;
+  }
+  .jkf-navbar .navbar {
+    min-height: var(--jkf-nav-height);
+    padding: 0;
+  }
+
+  /* 顶栏内容容器：三段式 flex（LOGO | 滚动菜单 | 登录按钮） */
+  .jkf-navbar__container {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    position: relative; /* 给底部进度条绝对定位提供锚点 */
+  }
+  /* 覆盖 Bootstrap .navbar > .container-fluid 的 flex-wrap:inherit（继承自 .navbar 的 wrap）
+     用更高优先级选择器 (0,2,0) 与 Bootstrap 持平，依靠后定义胜出，避免 !important */
+  .jkf-navbar .jkf-navbar__container { flex-wrap: nowrap; }
+
+  /* 品牌 LOGO */
+  .jkf-navbar__brand {
+    color: var(--jkf-nav-text);
+    font-weight: 700;
+    font-size: 1.25rem;
+    letter-spacing: 0.5px;
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color var(--jkf-nav-transition) ease;
+  }
+  .jkf-navbar__brand:hover { color: var(--jkf-nav-hover); }
+  .jkf-navbar__brand-icon { color: var(--jkf-nav-heart); font-size: 1.2rem; }
+
+  /* 超小屏：隐藏品牌文字仅留图标，压缩 padding 腾出横向空间 */
+  @media (max-width: 575.98px) {
+    .jkf-navbar__brand {
+      padding: 0 8px;
+      font-size: 1.1rem;
+      gap: 0;
+    }
+    .jkf-navbar__brand span[data-i18n="nav.brand"] { display: none; }
+  }
+
+  /* 分隔符竖线（仅桌面端显示，移动端节省空间隐藏） */
+  .jkf-navbar__divider {
+    width: 1px;
+    height: 24px;
+    background: var(--jkf-nav-divider);
+    margin: 0 4px;
+    display: none;
+    flex-shrink: 0;
+  }
+  @media (min-width: 992px) {
+    .jkf-navbar__divider { display: inline-block; }
+  }
+
+  /* 滚动菜单包裹器：承载左右渐变遮罩 */
+  .jkf-navbar__scroller-wrap {
+    flex: 1 1 auto;
+    min-width: 0;          /* 关键：允许收缩，否则 flex 子项会撑爆容器 */
+    position: relative;
+  }
+
+  /* 滚动视口：桌面默认 visible 不裁剪下拉；移动端开启横向滚动 */
+  .jkf-navbar__scroller {
+    overflow: visible;
+  }
+  @media (max-width: 991.98px) {
+    .jkf-navbar__scroller {
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch; /* iOS 平滑滚动 */
+      scroll-behavior: smooth;
+      scrollbar-width: none; /* Firefox 隐藏原生滚动条 */
+    }
+    .jkf-navbar__scroller::-webkit-scrollbar { display: none; } /* Chrome/Safari 隐藏 */
+  }
+
+  /* 导航菜单：强制横排不换行，配合横向滚动 */
+  .jkf-navbar__menu {
+    flex-direction: row;   /* 覆盖 Bootstrap .navbar-nav 默认 column */
+    align-items: center;
+    gap: 2px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    margin: 0;
+  }
+  .jkf-navbar__link {
+    color: var(--jkf-nav-text);
+    padding: 0 14px;
+    line-height: var(--jkf-nav-height);
+    font-size: 0.95rem;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color var(--jkf-nav-transition) ease;
+  }
+  .jkf-navbar__link:hover { color: var(--jkf-nav-hover); }
+  .jkf-navbar__link:active,
+  .jkf-navbar__link:focus-visible {
+    color: var(--jkf-nav-hover);
+    outline: none;
+  }
+  .jkf-navbar__link.is-current {
+    color: var(--jkf-nav-hover);
+    position: relative;
+  }
+  .jkf-navbar__link.is-current::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 14px;
+    right: 14px;
+    height: 2px;
+    background: var(--jkf-nav-hover);
+    border-radius: 1px 1px 0 0;
+  }
+
+  /* 装饰图标：黄色五角星 / 红色爱心 */
+  .jkf-navbar__star { color: var(--jkf-nav-star); }
+  .jkf-navbar__heart { color: var(--jkf-nav-heart); }
+
+  /* 下拉箭头 */
+  .jkf-navbar__caret {
+    font-size: 0.7rem;
+    transition: transform var(--jkf-nav-transition) ease;
+  }
+
+  /* 下拉子菜单 */
+  .jkf-navbar__item--has-children { position: relative; }
+  .jkf-navbar__submenu {
+    list-style: none;
+    padding: 6px 0;
+    margin: 0;
+    background: var(--jkf-nav-dropdown-bg);
+    border: 1px solid var(--jkf-nav-divider);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  }
+  .jkf-navbar__submenu-link {
+    display: block;
+    padding: 8px 16px;
+    color: var(--jkf-nav-text);
+    text-decoration: none;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background var(--jkf-nav-transition) ease, color var(--jkf-nav-transition) ease;
+  }
+  .jkf-navbar__submenu-link:hover {
+    background: var(--jkf-nav-dropdown-hover);
+    color: var(--jkf-nav-hover);
+  }
+  .jkf-navbar__submenu-link:active,
+  .jkf-navbar__submenu-link:focus-visible {
+    background: var(--jkf-nav-dropdown-hover);
+    color: var(--jkf-nav-hover);
+    outline: none;
+  }
+  .jkf-navbar__submenu-link.is-current {
+    background: var(--jkf-nav-dropdown-hover);
+    color: var(--jkf-nav-hover);
+  }
+
+  /* 桌面端：hover 与键盘 focus-within 均可展开下拉，保障 a11y */
+  @media (min-width: 992px) {
+    .jkf-navbar__submenu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      display: none;
+      min-width: 160px;
+      border-radius: 0 0 6px 6px;
+      z-index: 1000;
+    }
+    .jkf-navbar__item--has-children:hover > .jkf-navbar__submenu,
+    .jkf-navbar__item--has-children:focus-within > .jkf-navbar__submenu {
+      display: block;
+    }
+    .jkf-navbar__item--has-children:hover .jkf-navbar__caret,
+    .jkf-navbar__item--has-children:focus-within .jkf-navbar__caret {
+      transform: rotate(180deg);
+    }
+    /* 「更多」项在菜单最右，子菜单向左展开避免溢出视口右侧 */
+    .jkf-navbar__item--more > .jkf-navbar__submenu {
+      left: auto;
+      right: 0;
+    }
+  }
+
+  /* 移动端：子菜单与下拉箭头隐藏
+     原因：横向滚动容器内无法承载垂直下拉层（会被 overflow-y:hidden 裁剪）；
+     父级链接保持可点击跳转，子分类在父级页面内展示。
+     后续若需移动端访问子分类，可改为点击切换 + 全屏浮层覆盖式实现 */
+  @media (max-width: 991.98px) {
+    .jkf-navbar__submenu { display: none; }
+    .jkf-navbar__caret { display: none; }
+  }
+
+  /* 左右渐变遮罩：移动端启用，桌面端不显示（菜单放得下时无需提示） */
+  .jkf-navbar__scroller-wrap::before,
+  .jkf-navbar__scroller-wrap::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--jkf-nav-mask-size);
+    pointer-events: none; /* 不拦截点击 */
+    z-index: 2;
+    opacity: 0;
+    transition: opacity var(--jkf-nav-transition) ease;
+  }
+  .jkf-navbar__scroller-wrap::before {
+    left: 0;
+    background: linear-gradient(to right, var(--jkf-nav-bg) 0%, transparent 100%);
+  }
+  .jkf-navbar__scroller-wrap::after {
+    right: 0;
+    background: linear-gradient(to left, var(--jkf-nav-bg) 0%, transparent 100%);
+  }
+  @media (max-width: 991.98px) {
+    .jkf-navbar__scroller-wrap::before,
+    .jkf-navbar__scroller-wrap::after { opacity: 1; }
+    /* 滑到边缘时隐藏对应方向遮罩，告知用户已到尽头 */
+    .jkf-navbar__scroller-wrap.is-at-start::before { opacity: 0; }
+    .jkf-navbar__scroller-wrap.is-at-end::after { opacity: 0; }
+  }
+
+  /* 底部滚动进度条：移动端启用，指示当前可视范围占比 */
+  .jkf-navbar__scrollbar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--jkf-nav-scrollbar-h);
+    z-index: 3;
+    pointer-events: none;
+    display: none;
+  }
+  @media (max-width: 991.98px) {
+    .jkf-navbar__scrollbar { display: block; }
+  }
+  .jkf-navbar__scrollbar-thumb {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 30%;
+    background: var(--jkf-nav-hover);
+    border-radius: 2px;
+    opacity: 0.5;
+    transition: opacity var(--jkf-nav-transition) ease;
+    will-change: left, width;
+  }
+
+  /* 登录按钮 */
+  .jkf-navbar__actions {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 4px 0 8px;
+  }
+  .jkf-navbar__login {
+    background: var(--jkf-nav-login-bg);
+    color: var(--jkf-nav-login-text);
+    border: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 7px 22px;
+    border-radius: 4px;
+    white-space: nowrap;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: filter var(--jkf-nav-transition) ease;
+  }
+  .jkf-navbar__login:hover { filter: brightness(1.1); }
+  .jkf-navbar__login:focus-visible {
+    outline: 2px solid var(--jkf-nav-hover);
+    outline-offset: 2px;
+  }
+
+  /* 超小屏：压缩登录按钮、操作区与导航链接 padding，避免挤压滚动菜单 */
+  @media (max-width: 575.98px) {
+    .jkf-navbar__actions {
+      padding: 0 2px 0 4px;
+      gap: 0;
+    }
+    .jkf-navbar__login {
+      padding: 7px 12px;
+      font-size: 0.85rem;
+      gap: 4px;
+    }
+    .jkf-navbar__link { padding: 0 10px; }
+    /* 遮罩宽度减小，避免在超窄屏过度遮挡菜单内容 */
+    .jkf-navbar__scroller-wrap::before,
+    .jkf-navbar__scroller-wrap::after { width: 24px; }
+  }
+
+  /* 尊重用户的减少动画偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+
+<!-- =============================================================
+     风格筛选条（第二层导航，位于主菜单下方）
+     移动端横向滚动，桌面端居中横排
+     通过 data-style 属性传递风格值，点击触发 jkfStyleChange 事件
+     ============================================================= -->
+<style>
+  :root {
+    --jkf-filter-bg: #111;
+    --jkf-filter-pill-bg: #2a2a2a;
+    --jkf-filter-pill-hover: #3a3a3a;
+    --jkf-filter-pill-active: #ffc107;
+    --jkf-filter-pill-text: #b0b0b0;
+    --jkf-filter-pill-text-active: #1a1a1a;
+    --jkf-filter-height: 44px;
+  }
+
+  .jkf-navbar__filter {
+    background: var(--jkf-filter-bg);
+    border-bottom: 1px solid var(--jkf-nav-divider);
+    position: relative;
+  }
+
+  .jkf-navbar__filter-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .jkf-navbar__filter-inner::-webkit-scrollbar { display: none; }
+
+  .jkf-navbar__filter-btn {
+    flex-shrink: 0;
+    background: var(--jkf-filter-pill-bg);
+    border: 1px solid transparent;
+    color: var(--jkf-filter-pill-text);
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 5px 16px;
+    border-radius: 999px;
+    min-height: 32px;
+    cursor: pointer;
+    transition: all var(--jkf-nav-transition) ease;
+    white-space: nowrap;
+    font-family: var(--jkf-font-family);
+  }
+  .jkf-navbar__filter-btn:hover {
+    background: var(--jkf-filter-pill-hover);
+    color: var(--jkf-nav-text);
+  }
+  .jkf-navbar__filter-btn.is-active {
+    background: var(--jkf-filter-pill-active);
+    color: var(--jkf-filter-pill-text-active);
+    font-weight: 600;
+    border-color: var(--jkf-filter-pill-active);
+  }
+  .jkf-navbar__filter-btn:focus-visible {
+    outline: 2px solid var(--jkf-filter-pill-active);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 575.98px) {
+    .jkf-navbar__filter-btn {
+      font-size: 0.78rem;
+      padding: 4px 12px;
+      min-height: 30px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .jkf-navbar__filter-btn { transition: none; }
+  }
+</style>
+
+<header class="jkf-navbar">
+  <nav class="navbar" aria-label="主导航" data-i18n-aria="nav.aria_main">
+    <div class="container-fluid px-3 jkf-navbar__container">
+      <!-- 1. 品牌 LOGO 位（固定，不随菜单滚动） -->
+      <a class="jkf-navbar__brand navbar-brand" href="#">
+        <i class="bi bi-chat-heart-fill jkf-navbar__brand-icon" aria-hidden="true"></i>
+        <span data-i18n="nav.brand">SexyChat</span>
+      </a>
+
+      <!-- 2. 竖线分隔符（仅桌面端显示，分割品牌区与导航菜单区） -->
+      <span class="jkf-navbar__divider" aria-hidden="true"></span>
+
+      <!-- 3. 主导航菜单（移动端横向滚动 + 遮罩 + 进度条） -->
+      <div class="jkf-navbar__scroller-wrap" id="jkfNavScrollerWrap">
+        <div class="jkf-navbar__scroller" id="jkfNavScroller">
+          <ul class="navbar-nav jkf-navbar__menu">
+            <!-- ❤合作❤：红色爱心修饰的功能型入口 -->
+            <li class="nav-item">
+              <a class="nav-link jkf-navbar__link" href="#">
+                <i class="bi bi-heart-fill jkf-navbar__heart" aria-hidden="true"></i>
+                <span data-i18n="nav.cooperate">合作</span>
+                <i class="bi bi-heart-fill jkf-navbar__heart" aria-hidden="true"></i>
+              </a>
+            </li>
+
+            <!-- 更多 ▼：桌面端窄屏自动收纳溢出的菜单项，宽屏隐藏。结构由 JS 动态填充 -->
+            <li class="nav-item jkf-navbar__item--more jkf-navbar__item--has-children" id="jkfNavMore" hidden>
+              <a class="nav-link jkf-navbar__link" href="#" aria-haspopup="true">
+                <span data-i18n="nav.more">更多</span>
+                <i class="bi bi-chevron-down jkf-navbar__caret" aria-hidden="true"></i>
+              </a>
+              <ul class="jkf-navbar__submenu jkf-navbar__submenu--more" id="jkfNavMoreMenu"></ul>
+            </li>
+          </ul>
+        </div>
+        <!-- 底部滚动进度条：宽度随可视范围变化，位置随滚动同步 -->
+        <div class="jkf-navbar__scrollbar" id="jkfNavScrollbar" aria-hidden="true">
+          <div class="jkf-navbar__scrollbar-thumb"></div>
+        </div>
+      </div>
+
+      <!-- 4. 右侧操作区（国家语言切换器 + 登录按钮，固定不随菜单滚动） -->
+      <div class="jkf-navbar__actions">
+        {% include '子组件/国家语言切换器.html' %}
+        <button type="button" class="jkf-navbar__login" id="jkfNavLoginBtn">
+          <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+          <span data-i18n="nav.login">登录</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- 风格筛选条 -->
+  <div class="jkf-navbar__filter" id="jkfStyleFilter" role="tablist" aria-label="风格筛选">
+    <div class="container-fluid px-3">
+      <div class="jkf-navbar__filter-inner">
+        <button type="button" class="jkf-navbar__filter-btn is-active" data-style="" role="tab" aria-selected="true">全部</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-style="loli" role="tab" aria-selected="false">萝莉</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-style="queen" role="tab" aria-selected="false">御姐</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-style="hot" role="tab" aria-selected="false">火辣</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-style="pure" role="tab" aria-selected="false">清纯</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<script>
+  /**
+   * 顶部通栏导航交互脚本
+   * 职责：
+   *   1. 移动端横向菜单滚动监听 → 切换左右渐变遮罩显隐（提示已到边缘）
+   *   2. 同步更新底部滚动进度条 thumb 的位置与宽度
+   *   3. 预留登录按钮接入点
+   * 桌面端下拉菜单为纯 CSS hover/focus-within 实现，无需 JS 参与
+   */
+  (function () {
+    "use strict";
+
+    /** 滚动视口 DOM 引用 */
+    const scroller = document.getElementById("jkfNavScroller");
+    /** 滚动包裹器（承载遮罩状态类名 is-at-start / is-at-end） */
+    const wrap = document.getElementById("jkfNavScrollerWrap");
+    /** 进度条 thumb DOM 引用 */
+    const thumb = document.querySelector("#jkfNavScrollbar .jkf-navbar__scrollbar-thumb");
+    /** 主导航菜单 ul 引用 */
+    const menu = document.querySelector(".jkf-navbar__menu");
+    /** 「更多」收纳项 li（桌面端窄屏自动收纳溢出菜单项） */
+    const moreItem = document.getElementById("jkfNavMore");
+    /** 「更多」下拉子菜单 ul（承载被收纳的菜单项） */
+    const moreMenu = document.getElementById("jkfNavMoreMenu");
+    // 登录按钮 (#jkfNavLoginBtn) 的 click 由「登录弹窗」组件接管，见文件末尾 include
+
+    /** 边缘判定误差（px），避免浮点/亚像素导致状态闪烁 */
+    const SCROLL_EDGE_THRESHOLD = 1;
+    /** 防抖延迟（ms），用于 resize 高频事件 */
+    const RESIZE_DEBOUNCE_MS = 200;
+    /** 桌面端断点（≥此宽度启用溢出收纳，<此宽度用移动端横向滚动） */
+    const DESKTOP_BREAKPOINT = 992;
+    /** 收纳容差（px）：留一点余量避免亚像素导致临界状态闪烁 */
+    const OVERFLOW_TOLERANCE = 2;
+
+    /** rAF 节流标记，避免 scroll 高频回调阻塞主线程 */
+    let ticking = false;
+
+    /**
+     * 根据当前 scrollLeft / scrollWidth / clientWidth 计算遮罩显隐与进度条位置
+     * 触发时机：scroll 事件（rAF 节流）、resize（防抖）、初始化
+     */
+    function updateScrollState() {
+      if (!scroller) return;
+      const { scrollLeft, scrollWidth, clientWidth } = scroller;
+      const maxScroll = scrollWidth - clientWidth;
+
+      // 切换遮罩状态类名：到左边缘隐藏左遮罩，到右边缘隐藏右遮罩
+      if (wrap) {
+        wrap.classList.toggle("is-at-start", scrollLeft <= SCROLL_EDGE_THRESHOLD);
+        wrap.classList.toggle("is-at-end", scrollLeft >= maxScroll - SCROLL_EDGE_THRESHOLD);
+      }
+
+      // 更新进度条 thumb 宽度与位置
+      if (!thumb) return;
+      if (maxScroll <= 0) {
+        // 内容不足以滚动：thumb 占满并隐藏，避免视觉误导
+        thumb.style.width = "100%";
+        thumb.style.left = "0";
+        thumb.style.opacity = "0";
+        return;
+      }
+      const widthPct = (clientWidth / scrollWidth) * 100;
+      const leftPct = (scrollLeft / maxScroll) * (100 - widthPct);
+      thumb.style.width = widthPct + "%";
+      thumb.style.left = leftPct + "%";
+      thumb.style.opacity = "";
+    }
+
+    /**
+     * 判断当前是否桌面端（≥992px）
+     * 桌面端启用溢出收纳逻辑，移动端用横向滚动不需要收纳
+     * @returns {boolean}
+     */
+    function isDesktop() {
+      return window.matchMedia("(min-width: " + DESKTOP_BREAKPOINT + "px)").matches;
+    }
+
+    /**
+     * 判断主菜单是否溢出容器
+     * 桌面端 scroller overflow 为 visible，scrollWidth 反映菜单内容真实宽度
+     * @returns {boolean}
+     */
+    function isOverflowing() {
+      if (!menu || !scroller) return false;
+      return menu.scrollWidth > scroller.clientWidth + OVERFLOW_TOLERANCE;
+    }
+
+    /**
+     * 把「更多」子菜单里的所有项移回主菜单（插入到「更多」项之前）
+     * 用于 resize 后重新计算收纳：先全部归位，再按需重新收纳
+     */
+    function returnAllItemsToMenu() {
+      if (!moreMenu || !moreItem || !menu) return;
+      while (moreMenu.children.length > 0) {
+        const item = moreMenu.children[0];
+        // 恢复 a 的类名：子菜单 link → 主菜单 link（恢复横排大尺寸样式）
+        const link = item.querySelector(".jkf-navbar__submenu-link");
+        if (link) link.className = "nav-link jkf-navbar__link";
+        // insertBefore(moreItem) 把项插到「更多」前，保持原始相对顺序
+        menu.insertBefore(item, moreItem);
+      }
+    }
+
+    /**
+     * 把主菜单最后一个非「更多」项移入「更多」子菜单（插到子菜单最前）
+     * 收纳顺序：从右往左逐项收纳
+     * @returns {Element|null} 被收纳的 li，无可用项时返回 null
+     */
+    function moveLastItemToMore() {
+      if (!menu || !moreMenu) return null;
+      const items = menu.children;
+      let lastItem = null;
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i] !== moreItem) { lastItem = items[i]; break; }
+      }
+      if (!lastItem) return null;
+      // 切换 a 的类名：主菜单 link → 子菜单 link，复用 submenu-link 样式（小尺寸 + hover 背景）
+      const link = lastItem.querySelector(".jkf-navbar__link");
+      if (link) link.className = "jkf-navbar__submenu-link";
+      // insertBefore(firstChild) 让后收纳的项排在子菜单更上方，保持视觉顺序与原始一致
+      moreMenu.insertBefore(lastItem, moreMenu.firstChild);
+      return lastItem;
+    }
+
+    /**
+     * 桌面端响应式收纳：检测主菜单是否溢出，溢出则把右侧项逐个收入「更多」下拉
+     * 触发时机：初始化、resize（防抖）
+     * 算法：先全部归位 → 再循环检测溢出并收纳，直到不溢出或只剩 1 个主项
+     */
+    function updateOverflowMenu() {
+      if (!moreItem || !menu || !moreMenu) return;
+      // 移动端：所有项归位，「更多」隐藏，靠横向滚动访问
+      if (!isDesktop()) {
+        returnAllItemsToMenu();
+        moreItem.hidden = true;
+        return;
+      }
+      // 桌面端：先全部归位，再按需收纳
+      returnAllItemsToMenu();
+      while (isOverflowing()) {
+        // 至少保留 1 个主项 + 「更多」项，避免主菜单被掏空
+        let mainCount = 0;
+        for (let i = 0; i < menu.children.length; i++) {
+          if (menu.children[i] !== moreItem) mainCount++;
+        }
+        if (mainCount <= 1) break;
+        if (!moveLastItemToMore()) break;
+      }
+      // 有被收纳的项才显示「更多」
+      moreItem.hidden = (moreMenu.children.length === 0);
+    }
+
+    /**
+     * scroll 事件处理：用 requestAnimationFrame 节流
+     * 原因：scroll 触发频率极高（每帧多次），直接回调会阻塞渲染
+     */
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () {
+        updateScrollState();
+        ticking = false;
+      });
+    }
+
+    /**
+     * 防抖工具：将高频事件合并为延迟后的单次触发
+     * @param {Function} fn - 需要防抖的函数
+     * @param {number} delay - 延迟毫秒数
+     * @returns {Function} 防抖后的函数
+     */
+    function debounce(fn, delay) {
+      let timer = null;
+      return function () {
+        if (timer) clearTimeout(timer);
+        timer = window.setTimeout(fn, delay);
+      };
+    }
+
+    // 绑定滚动监听（仅 scroller 存在时绑 scroll 事件）
+    if (scroller) {
+      // passive:true 表示不会在 scroll 回调中调用 preventDefault，允许浏览器并行优化
+      scroller.addEventListener("scroll", onScroll, { passive: true });
+    }
+    // resize：同时刷新滚动状态与桌面端收纳，共用防抖避免高频重复触发
+    window.addEventListener("resize", debounce(function () {
+      updateScrollState();
+      updateOverflowMenu();
+    }, RESIZE_DEBOUNCE_MS));
+    // 初次渲染：同步滚动状态（处理刷新后已处于边缘的情况）
+    updateScrollState();
+    // 桌面端收纳需在 i18n 应用初始语言后执行（菜单宽度依赖语言文本长度）
+    // i18n 字典 script 先于本 script 执行，其 DOMContentLoaded 监听先注册，
+    // 故本回调触发时 i18n _applyTranslations 已完成，可读到正确宽度
+    function initOverflowMenu() { updateOverflowMenu(); }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initOverflowMenu);
+    } else {
+      initOverflowMenu();
+    }
+    // 语言切换后菜单文本长度变化（中英文宽度不同），需重新计算收纳
+    // 回调在 _applyTranslations 之后触发，此时文本已更新，宽度计算准确
+    if (window.jkfI18n && typeof window.jkfI18n.onLanguageChange === "function") {
+      window.jkfI18n.onLanguageChange(updateOverflowMenu);
+    }
+
+    // ==============================================================
+    //  导航菜单点击：未登录时所有链接点击先弹出登录框
+    //  事件委托挂在 menu 容器上（性能 + 动态收纳项也生效）
+    //  排除「更多」按钮自身（用于展开子菜单，不触发登录）
+    // ==============================================================
+    /**
+     * 打开登录弹窗（兜底：登录弹窗组件可能未就绪）
+     */
+    function openLoginModal() {
+      if (window.jkfLoginModal && typeof window.jkfLoginModal.open === "function") {
+        window.jkfLoginModal.open();
+      }
+    }
+    if (menu) {
+      menu.addEventListener("click", function (event) {
+        var link = event.target.closest(".jkf-navbar__link, .jkf-navbar__submenu-link");
+        if (!link) return;
+        event.preventDefault(); // 所有菜单链接阻止默认 href="#" 跳转
+        // 「更多」按钮用于展开子菜单，不触发登录（其子菜单项仍会触发）
+        if (link.classList.contains("jkf-navbar__link") && link.closest(".jkf-navbar__item--more")) return;
+        openLoginModal();
+      });
+    }
+
+    // ==============================================================
+    //  风格筛选交互
+    //  点击风格 pill 按钮 → 切换 is-active → 持久化 → 触发 jkfStyleChange 事件
+    // ==============================================================
+
+    /** localStorage key */
+    var STYLE_STORAGE_KEY = "jkf-style";
+    /** 默认风格（空字符串 = 全部） */
+    var DEFAULT_STYLE = "";
+
+    /** 风格筛选容器 */
+    var filterEl = document.getElementById("jkfStyleFilter");
+    /** 当前选中风格 */
+    var _currentStyle = _loadStyle();
+
+    /**
+     * 从 localStorage 读取风格偏好
+     * @returns {string}
+     */
+    function _loadStyle() {
+      try {
+        var s = localStorage.getItem(STYLE_STORAGE_KEY);
+        if (typeof s === "string") return s;
+      } catch (e) {}
+      return DEFAULT_STYLE;
+    }
+
+    /**
+     * 持久化风格选择
+     * @param {string} style
+     */
+    function _saveStyle(style) {
+      try { localStorage.setItem(STYLE_STORAGE_KEY, style); } catch (e) {}
+    }
+
+    /**
+     * 更新所有按钮的 is-active 状态
+     * @param {string} style
+     */
+    function _updateFilterButtons(style) {
+      if (!filterEl) return;
+      var btns = filterEl.querySelectorAll(".jkf-navbar__filter-btn");
+      btns.forEach(function (btn) {
+        var isActive = btn.getAttribute("data-style") === style;
+        btn.classList.toggle("is-active", isActive);
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+    }
+
+    /**
+     * 选择风格：持久化 + 更新 UI + 触发事件
+     * @param {string} style
+     */
+    function selectStyle(style) {
+      if (style === _currentStyle) return;
+      _currentStyle = style;
+      _saveStyle(style);
+      _updateFilterButtons(style);
+      window.dispatchEvent(new CustomEvent("jkfStyleChange", { detail: { style: style } }));
+    }
+
+    /** 事件委托：点击风格按钮 */
+    if (filterEl) {
+      filterEl.addEventListener("click", function (event) {
+        var btn = event.target.closest(".jkf-navbar__filter-btn");
+        if (!btn) return;
+        var style = btn.getAttribute("data-style") || "";
+        selectStyle(style);
+      });
+    }
+
+    // 初始化按钮状态
+    _updateFilterButtons(_currentStyle);
+
+    // 在 jkfSwitcher 上补充风格 API
+    window.jkfSwitcher.getStyle = function () { return _currentStyle; };
+    window.jkfSwitcher.setStyle = selectStyle;
+
+    // 国家切换时重置风格为"全部"
+    window.addEventListener("jkfCountryChange", function () {
+      if (_currentStyle !== "") {
+        selectStyle("");
+      }
+    });
+  })();
+</script>
+
+<!-- 引入登录弹窗子组件：自动绑定上方 #jkfNavLoginBtn 的 click 事件 -->
+{% include '子组件/登录弹窗.html' %}

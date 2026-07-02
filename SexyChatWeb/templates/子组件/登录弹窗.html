@@ -1,0 +1,600 @@
+{% load static %}
+<!-- 登录弹窗组件：依赖 Bootstrap 5.3 + Bootstrap Icons（已在 template.html 统一引入） -->
+<!-- 当前仅内置 WhatsApp 登录：扫码登录 / 号码登录 两种方式；后续可扩展其他登录渠道 -->
+<!-- 集成方式：自动绑定导航栏 #jkfNavLoginBtn 的 click 事件；并暴露 window.jkfLoginModal 供外部调用 -->
+
+<style>
+  /* === 登录弹窗样式（JKF 深色主题，复用导航栏视觉语言）=== */
+  :root {
+    --jkf-login-modal-bg: #1a1a1a;          /* 弹窗主体背景 */
+    --jkf-login-modal-header-bg: #0d0d0d;   /* 头部背景 */
+    --jkf-login-text: #f0f0f0;              /* 主文字色 */
+    --jkf-login-text-muted: #b0b0b0;        /* 次要文字色 */
+    --jkf-login-divider: #3a3a3a;            /* 分隔线 */
+    --jkf-login-input-bg: #2a2a2a;           /* 输入框背景 */
+    --jkf-login-input-border: #3a3a3a;       /* 输入框边框 */
+    --jkf-login-error: #ef4444;              /* 错误红 */
+    --jkf-login-whatsapp: #25D366;           /* WhatsApp 品牌绿 */
+    --jkf-login-whatsapp-dark: #1ebe57;     /* WhatsApp 深绿（hover） */
+    --jkf-login-radius: 8px;                 /* 统一圆角 */
+    --jkf-login-transition: 200ms;           /* 统一过渡时长 */
+    --jkf-font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .jkf-login-modal .modal-content {
+    font-family: var(--jkf-font-family);
+    background: var(--jkf-login-modal-bg);
+    color: var(--jkf-login-text);
+    border: 1px solid var(--jkf-login-divider);
+    border-radius: var(--jkf-login-radius);
+    overflow: hidden;
+  }
+  .jkf-login-modal .modal-header {
+    background: var(--jkf-login-modal-header-bg);
+    border-bottom: 1px solid var(--jkf-login-divider);
+    padding: 14px 18px;
+  }
+  .jkf-login-modal .modal-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  /* 关闭按钮适配深色背景 */
+  .jkf-login-modal .btn-close {
+    filter: invert(1) brightness(2);
+    opacity: 0.7;
+  }
+  .jkf-login-modal .btn-close:hover { opacity: 1; }
+
+  .jkf-login-modal .modal-body { padding: 20px 18px; }
+
+  /* 顶部品牌区 */
+  .jkf-login__brand {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .jkf-login__brand-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--jkf-login-whatsapp);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+  }
+  .jkf-login__brand-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .jkf-login__brand-subtitle {
+    color: var(--jkf-login-text-muted);
+    font-size: 0.85rem;
+    margin: 0;
+  }
+
+  /* Tab 切换条 */
+  .jkf-login__tabs {
+    display: flex;
+    background: var(--jkf-login-input-bg);
+    border-radius: var(--jkf-login-radius);
+    padding: 4px;
+    margin-bottom: 18px;
+  }
+  .jkf-login__tab {
+    flex: 1 1 0;
+    min-height: 44px;                    /* 移动端触摸目标 */
+    border: none;
+    background: transparent;
+    color: var(--jkf-login-text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background var(--jkf-login-transition) ease, color var(--jkf-login-transition) ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .jkf-login__tab.is-active {
+    background: var(--jkf-login-whatsapp);
+    color: #fff;
+  }
+  .jkf-login__tab:hover:not(.is-active) { color: var(--jkf-login-text); }
+  .jkf-login__tab:focus-visible {
+    outline: 2px solid var(--jkf-login-whatsapp);
+    outline-offset: 2px;
+  }
+
+  /* Tab 面板互斥显示 */
+  .jkf-login__panel { display: none; }
+  .jkf-login__panel.is-active { display: block; }
+
+  /* 扫码面板 */
+  .jkf-login__qr { text-align: center; }
+  .jkf-login__qr-frame {
+    display: inline-block;
+    padding: 12px;
+    background: #fff;
+    border-radius: var(--jkf-login-radius);
+    margin-bottom: 12px;
+  }
+  .jkf-login__qr-img {
+    display: block;
+    width: 200px;
+    height: 200px;
+    object-fit: contain;
+  }
+  .jkf-login__qr-tip {
+    color: var(--jkf-login-text-muted);
+    font-size: 0.85rem;
+    margin: 0 0 8px;
+    line-height: 1.5;
+  }
+  .jkf-login__qr-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+  .jkf-login__qr-refresh {
+    background: transparent;
+    border: 1px solid var(--jkf-login-divider);
+    color: var(--jkf-login-text-muted);
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    min-height: 36px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: color var(--jkf-login-transition) ease, border-color var(--jkf-login-transition) ease;
+  }
+  .jkf-login__qr-refresh:hover {
+    color: var(--jkf-login-whatsapp);
+    border-color: var(--jkf-login-whatsapp);
+  }
+  /* 刷新按钮图标旋转动画 */
+  .jkf-login__qr-refresh.is-spinning .bi {
+    animation: jkf-login-spin 0.6s ease-in-out;
+  }
+  @keyframes jkf-login-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* 号码输入面板 */
+  .jkf-login__form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .jkf-login__phone-row {
+    display: flex;
+    gap: 8px;
+  }
+  .jkf-login__phone-prefix { flex: 0 0 110px; }
+  .jkf-login__phone-input { flex: 1 1 auto; min-width: 0; }
+
+  .jkf-login__input,
+  .jkf-login__select {
+    background: var(--jkf-login-input-bg);
+    border: 1px solid var(--jkf-login-input-border);
+    color: var(--jkf-login-text);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    min-height: 44px;
+    width: 100%;
+    transition: border-color var(--jkf-login-transition) ease, box-shadow var(--jkf-login-transition) ease;
+  }
+  .jkf-login__input::placeholder { color: var(--jkf-login-text-muted); }
+  .jkf-login__input:focus,
+  .jkf-login__select:focus {
+    border-color: var(--jkf-login-whatsapp);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.2);
+  }
+  /* select 下拉箭头适配深色 */
+  .jkf-login__select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23b0b0b0' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M4 6l4 4 4-4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 14px;
+    padding-right: 32px;
+  }
+  /* 错误态 */
+  .jkf-login__input.is-invalid {
+    border-color: var(--jkf-login-error);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+  }
+  .jkf-login__error {
+    color: var(--jkf-login-error);
+    font-size: 0.8rem;
+    margin: -4px 0 0;
+    min-height: 1em;
+    display: none;
+  }
+  .jkf-login__error.is-visible { display: block; }
+
+  .jkf-login__submit {
+    background: var(--jkf-login-whatsapp);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    min-height: 44px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background var(--jkf-login-transition) ease;
+  }
+  .jkf-login__submit:hover { background: var(--jkf-login-whatsapp-dark); }
+  .jkf-login__submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .jkf-login__hint {
+    color: var(--jkf-login-text-muted);
+    font-size: 0.8rem;
+    margin: 0;
+    text-align: center;
+  }
+
+  /* 超小屏适配 */
+  @media (max-width: 575.98px) {
+    .jkf-login-modal .modal-dialog { margin: 8px; }
+    .jkf-login__qr-img { width: 180px; height: 180px; }
+    .jkf-login__phone-prefix { flex-basis: 96px; }
+  }
+
+  /* 尊重用户的减少动画偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+</style>
+
+<!-- 登录弹窗：Bootstrap Modal，由导航栏登录按钮触发 -->
+<div class="modal fade jkf-login-modal" id="jkfLoginModal" tabindex="-1"
+     aria-labelledby="jkfLoginModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="jkfLoginModalTitle">
+          <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
+          账号登录
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+      </div>
+
+      <div class="modal-body">
+        <!-- 品牌区：当前仅 WhatsApp 一种渠道 -->
+        <div class="jkf-login__brand">
+          <div class="jkf-login__brand-icon">
+            <i class="bi bi-whatsapp" aria-hidden="true"></i>
+          </div>
+          <p class="jkf-login__brand-title">使用 WhatsApp 登录</p>
+          <p class="jkf-login__brand-subtitle">当前仅支持 WhatsApp 登录，更多方式敬请期待</p>
+        </div>
+
+        <!-- Tab 切换条 -->
+        <div class="jkf-login__tabs" role="tablist" aria-label="登录方式切换">
+          <button type="button" class="jkf-login__tab is-active" id="jkfLoginTabQr"
+                  role="tab" aria-selected="true" aria-controls="jkfLoginPanelQr"
+                  data-target="jkfLoginPanelQr">
+            <i class="bi bi-qr-code-scan" aria-hidden="true"></i>
+            扫码登录
+          </button>
+          <button type="button" class="jkf-login__tab" id="jkfLoginTabPhone"
+                  role="tab" aria-selected="false" aria-controls="jkfLoginPanelPhone"
+                  data-target="jkfLoginPanelPhone">
+            <i class="bi bi-phone" aria-hidden="true"></i>
+            号码登录
+          </button>
+        </div>
+
+        <!-- 扫码面板 -->
+        <div class="jkf-login__panel is-active" id="jkfLoginPanelQr"
+             role="tabpanel" aria-labelledby="jkfLoginTabQr">
+          <div class="jkf-login__qr">
+            <div class="jkf-login__qr-frame">
+              <!-- TODO: 替换为后端动态签发的登录二维码
+                   原因：当前为前端组件演示，后端 WhatsApp 二维码签发接口尚未提供；
+                   后续接入后，src 改为动态 URL，并在弹窗 shown.bs.modal 事件触发时刷新 -->
+              <img class="jkf-login__qr-img"
+                   src="https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=black%20and%20white%20QR%20code%20pattern%20with%20three%20corner%20finder%20squares%20and%20random%20data%20modules%2C%20high%20contrast%2C%20scannable&image_size=square"
+                   alt="WhatsApp 登录二维码"
+                   width="200" height="200" loading="lazy">
+            </div>
+            <p class="jkf-login__qr-tip">打开 WhatsApp → 设置 → 关联设备 → 扫描上方二维码</p>
+            <div class="jkf-login__qr-actions">
+              <button type="button" class="jkf-login__qr-refresh" id="jkfLoginQrRefresh">
+                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                刷新二维码
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 号码面板 -->
+        <div class="jkf-login__panel" id="jkfLoginPanelPhone"
+             role="tabpanel" aria-labelledby="jkfLoginTabPhone">
+          <form class="jkf-login__form" id="jkfLoginForm" novalidate>
+            <div class="jkf-login__phone-row">
+              <select class="jkf-login__select jkf-login__phone-prefix"
+                      id="jkfLoginCountryCode" aria-label="国家区号">
+                <option value="+86">+86 中国</option>
+                <option value="+852">+852 香港</option>
+                <option value="+886">+886 台湾</option>
+                <option value="+1">+1 美国/加拿大</option>
+                <option value="+44">+44 英国</option>
+                <option value="+81">+81 日本</option>
+                <option value="+82">+82 韩国</option>
+                <option value="+65">+65 新加坡</option>
+                <option value="+60">+60 马来西亚</option>
+                <option value="+61">+61 澳大利亚</option>
+              </select>
+              <input type="tel" class="jkf-login__input jkf-login__phone-input"
+                     id="jkfLoginPhone" placeholder="请输入 WhatsApp 号码"
+                     inputmode="numeric" maxlength="15" autocomplete="tel" required>
+            </div>
+            <p class="jkf-login__error" id="jkfLoginError" role="alert"></p>
+            <button type="submit" class="jkf-login__submit" id="jkfLoginSubmit">
+              <i class="bi bi-send" aria-hidden="true"></i>
+              发送验证码
+            </button>
+            <p class="jkf-login__hint">未注册的号码将自动创建账号</p>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /**
+   * 登录弹窗交互脚本
+   * 职责：
+   *   1. 绑定导航栏 #jkfNavLoginBtn 的 click → 打开弹窗
+   *   2. Tab 切换：扫码 / 号码两个面板互斥显示，同步 a11y 属性
+   *   3. 扫码刷新按钮：占位逻辑，后续接入后端二维码签发接口
+   *   4. 号码表单提交：本地格式校验 + 占位提交逻辑
+   *   5. 暴露 window.jkfLoginModal.open/close，供页面其他位置调用
+   */
+  (function () {
+    "use strict";
+
+    /** 弹窗根 DOM */
+    const modalEl = document.getElementById("jkfLoginModal");
+    if (!modalEl) return;
+
+    /** 导航栏登录按钮（自动绑定，若存在则接管其 click） */
+    const navLoginBtn = document.getElementById("jkfNavLoginBtn");
+    /** Tab 按钮集合 */
+    const tabButtons = modalEl.querySelectorAll(".jkf-login__tab");
+    /** Tab 面板集合 */
+    const tabPanels = modalEl.querySelectorAll(".jkf-login__panel");
+    /** 扫码刷新按钮 */
+    const qrRefreshBtn = document.getElementById("jkfLoginQrRefresh");
+    /** 二维码图片 DOM */
+    const qrImg = modalEl.querySelector(".jkf-login__qr-img");
+    /** 号码表单 */
+    const loginForm = document.getElementById("jkfLoginForm");
+    /** 号码输入框 */
+    const phoneInput = document.getElementById("jkfLoginPhone");
+    /** 区号下拉 */
+    const countryCodeSelect = document.getElementById("jkfLoginCountryCode");
+    /** 提交按钮 */
+    const submitBtn = document.getElementById("jkfLoginSubmit");
+    /** 内联错误提示元素 */
+    const errorEl = document.getElementById("jkfLoginError");
+
+    /** Bootstrap Modal 实例（懒加载，避免未引入 Bootstrap 时报错） */
+    let bsModal = null;
+
+    /** 国家区号 → 本地号码正则映射，用于基础格式校验 */
+    const PHONE_PATTERNS = {
+      "+86": /^1[3-9]\d{9}$/,    // 中国大陆手机号 11 位
+      "+852": /^\d{8}$/,         // 香港 8 位
+      "+886": /^9\d{8}$/,        // 台湾移动 9 开头 9 位
+      "+1": /^\d{10}$/,          // 美/加 10 位
+      "+44": /^\d{10}$/,         // 英国
+      "+81": /^\d{9,10}$/,       // 日本
+      "+82": /^\d{9,10}$/,       // 韩国
+      "+65": /^\d{8}$/,          // 新加坡
+      "+60": /^\d{9,10}$/,       // 马来西亚
+      "+61": /^\d{9}$/,          // 澳大利亚
+    };
+
+    /** 提交按钮 loading 状态持续时长（ms），用于模拟异步请求 */
+    const SUBMIT_LOADING_MS = 800;
+    /** 刷新按钮旋转动画时长（ms） */
+    const QR_SPIN_MS = 600;
+
+    /**
+     * 懒加载获取 Bootstrap Modal 实例
+     * 原因：Bootstrap JS 在 template.html 引入，此处不直接依赖加载顺序；
+     *       首次调用时实例化，避免初始化时报错
+     * @returns {bootstrap.Modal|null}
+     */
+    function getModal() {
+      if (bsModal) return bsModal;
+      if (!window.bootstrap || !window.bootstrap.Modal) return null;
+      bsModal = new window.bootstrap.Modal(modalEl);
+      return bsModal;
+    }
+
+    /**
+     * 打开弹窗
+     */
+    function open() {
+      const modal = getModal();
+      if (modal) modal.show();
+    }
+
+    /**
+     * 关闭弹窗
+     */
+    function close() {
+      const modal = getModal();
+      if (modal) modal.hide();
+    }
+
+    /**
+     * 切换 Tab 面板
+     * @param {string} targetId - 目标面板 DOM id
+     */
+    function switchTab(targetId) {
+      tabButtons.forEach(function (btn) {
+        const isActive = btn.dataset.target === targetId;
+        btn.classList.toggle("is-active", isActive);
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      tabPanels.forEach(function (panel) {
+        panel.classList.toggle("is-active", panel.id === targetId);
+      });
+    }
+
+    /** 绑定 Tab 点击 */
+    tabButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        switchTab(btn.dataset.target);
+      });
+    });
+
+    /**
+     * 刷新二维码
+     * 当前为占位逻辑：仅触发图标旋转动画 + 控制台提示
+     * 后续替换为：调用后端 /api/login/whatsapp/qr 获取新二维码 URL，更新 img.src
+     */
+    function refreshQrCode() {
+      if (qrRefreshBtn) {
+        qrRefreshBtn.classList.add("is-spinning");
+        window.setTimeout(function () {
+          qrRefreshBtn.classList.remove("is-spinning");
+        }, QR_SPIN_MS);
+      }
+      // TODO: 接入后端动态二维码签发接口
+      // 原因：当前仅前端组件，后端 WhatsApp OAuth 二维码接口尚未提供；
+      // 后续实现示例：
+      //   fetch('/api/login/whatsapp/qr', { method: 'POST' })
+      //     .then(r => r.json())
+      //     .then(data => { if (qrImg) qrImg.src = data.qrUrl; })
+      //     .catch(() => { /* 错误处理 */ });
+    }
+
+    if (qrRefreshBtn) {
+      qrRefreshBtn.addEventListener("click", refreshQrCode);
+    }
+
+    /**
+     * 显示内联错误提示
+     * @param {string} message - 错误文案
+     */
+    function showError(message) {
+      if (errorEl) {
+        errorEl.textContent = message;
+        errorEl.classList.add("is-visible");
+      }
+      if (phoneInput) {
+        phoneInput.classList.add("is-invalid");
+        phoneInput.focus();
+      }
+    }
+
+    /** 隐藏内联错误提示 */
+    function clearError() {
+      if (errorEl) {
+        errorEl.classList.remove("is-visible");
+        errorEl.textContent = "";
+      }
+      if (phoneInput) {
+        phoneInput.classList.remove("is-invalid");
+      }
+    }
+
+    /**
+     * 切换提交按钮 loading 状态
+     * @param {boolean} loading - 是否进入 loading
+     */
+    function setSubmitLoading(loading) {
+      if (!submitBtn) return;
+      submitBtn.disabled = loading;
+      submitBtn.innerHTML = loading
+        ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 发送中...'
+        : '<i class="bi bi-send" aria-hidden="true"></i> 发送验证码';
+    }
+
+    /**
+     * 号码表单提交处理
+     * 步骤：基础校验 → 模拟提交 → 关闭弹窗
+     * @param {Event} event - submit 事件
+     */
+    function handleFormSubmit(event) {
+      event.preventDefault();
+      clearError();
+
+      const countryCode = countryCodeSelect ? countryCodeSelect.value : "";
+      const phone = phoneInput ? phoneInput.value.trim() : "";
+      const pattern = PHONE_PATTERNS[countryCode];
+
+      // 校验：号码非空
+      if (!phone) {
+        showError("请输入 WhatsApp 号码");
+        return;
+      }
+      // 校验：号码符合对应国家格式
+      if (!pattern || !pattern.test(phone)) {
+        showError("号码格式不正确，请检查后重试");
+        return;
+      }
+
+      // TODO: 接入后端发送验证码接口
+      // 原因：当前仅前端组件，后端 WhatsApp 验证码下发接口尚未提供；
+      // 后续实现示例：
+      //   fetch('/api/login/whatsapp/otp', {
+      //     method: 'POST',
+      //     headers: { 'Content-Type': 'application/json' },
+      //     body: JSON.stringify({ phone: countryCode + phone })
+      //   }).then(() => { 切换到验证码输入步骤 });
+
+      setSubmitLoading(true);
+      window.setTimeout(function () {
+        setSubmitLoading(false);
+        close();
+      }, SUBMIT_LOADING_MS);
+    }
+
+    if (loginForm) {
+      loginForm.addEventListener("submit", handleFormSubmit);
+    }
+
+    // 输入时清除错误态
+    if (phoneInput) {
+      phoneInput.addEventListener("input", clearError);
+    }
+
+    // 绑定导航栏登录按钮
+    if (navLoginBtn && !navLoginBtn.dataset.jkfLoginBound) {
+      navLoginBtn.addEventListener("click", open);
+      navLoginBtn.dataset.jkfLoginBound = "1";
+    }
+
+    // 暴露 API 供外部调用（如顶部"立即注册"按钮）
+    window.jkfLoginModal = { open: open, close: close };
+  })();
+</script>

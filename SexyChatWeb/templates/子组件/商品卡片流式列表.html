@@ -1,0 +1,1094 @@
+{% load static %}
+<!-- 商品卡片瀑布流列表组件：
+     CSS Column 瀑布流布局（PC 5列 → 平板 4列 → 小屏 3列 → 手机 2列），
+     单卡片为圆角矩形容器，垂直 4 层结构（图片→地域标签→标题→底部数据栏）。
+     图片高度由自然宽高比决定，形成错落有致的瀑布流视觉效果。
+     JS 导出 SexyChatCardList 构造器，支持外部 render/append/分页/滚动底部回调。
+     依赖：Bootstrap 5.3 + Bootstrap Icons（已在 template.html 统一引入）
+-->
+
+<style>
+  /* === 商品卡片组件样式（暗色主题/瀑布流） === */
+  :root {
+    --jkf-card-bg: #1e1e1e;
+    --jkf-card-border: #2a2a2a;
+    --jkf-card-radius: 10px;
+    --jkf-card-text: #f0f0f0;
+    --jkf-card-muted: #999;
+    --jkf-card-overlay: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.85) 100%);
+    --jkf-card-placeholder: #2a2a2a;
+    --jkf-card-transition: 300ms;
+    --jkf-card-glow: rgba(255, 193, 7, 0.08);
+    --jkf-card-glow-hover: rgba(255, 193, 7, 0.18);
+    --jkf-font: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    /* 交互色 */
+    --jkf-card-blue: #4dabf7;
+    --jkf-card-yellow: #ffc107;
+    --jkf-card-heart: #ef4444;
+    --jkf-card-eye: #74c0fc;
+    --jkf-card-coin: #fcc419;
+  }
+
+  .jkf-card-list { font-family: var(--jkf-font); }
+
+  /* =============================================================
+   *  瀑布流栅格（CSS Columns）
+   * ============================================================= */
+  .jkf-card-masonry {
+    column-count: 5;
+    column-gap: 12px;
+  }
+  @media (max-width: 1199.98px) { .jkf-card-masonry { column-count: 4; } }
+  @media (max-width: 991.98px)  { .jkf-card-masonry { column-count: 3; } }
+  @media (max-width: 575.98px)  { .jkf-card-masonry { column-count: 2; column-gap: 8px; } }
+
+  .jkf-card-masonry .jkf-card-item,
+  .jkf-card-masonry .jkf-card-skel {
+    break-inside: avoid;
+    margin-bottom: 12px;
+    display: inline-block;
+    width: 100%;
+  }
+  @media (max-width: 575.98px) {
+    .jkf-card-masonry .jkf-card-item,
+    .jkf-card-masonry .jkf-card-skel { margin-bottom: 8px; }
+  }
+
+  /* =============================================================
+   *  单张卡片
+   * ============================================================= */
+  .jkf-card-item {
+    background: var(--jkf-card-bg);
+    border: 1px solid var(--jkf-card-border);
+    border-radius: var(--jkf-card-radius);
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    transition:
+      transform var(--jkf-card-transition) cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow var(--jkf-card-transition) ease,
+      border-color var(--jkf-card-transition) ease;
+    /* 底部金色光晕暗示 */
+    box-shadow: 0 1px 0 var(--jkf-card-glow);
+  }
+  .jkf-card-item:hover {
+    transform: translateY(-5px);
+    box-shadow:
+      0 0 0 1px rgba(255, 193, 7, 0.15),
+      0 12px 32px rgba(0, 0, 0, 0.5),
+      0 0 40px var(--jkf-card-glow-hover);
+    border-color: rgba(255, 193, 7, 0.15);
+  }
+
+  /* ---- 第1层：主展示大图 ---- */
+  .jkf-card__img-wrap {
+    position: relative;
+    overflow: hidden;
+    background: var(--jkf-card-placeholder);
+    /* 无 aspect-ratio——图片自然高度决定瀑布流错落感 */
+  }
+  .jkf-card__img {
+    width: 100%;
+    display: block;
+    transition:
+      transform var(--jkf-card-transition) cubic-bezier(0.34, 1.56, 0.64, 1),
+      filter var(--jkf-card-transition) ease;
+  }
+  .jkf-card-item:hover .jkf-card__img {
+    transform: scale(1.08);
+    filter: brightness(1.05);
+  }
+
+  /* 图片占位骨架 */
+  .jkf-card__img-placeholder {
+    position: absolute;
+    inset: 0;
+    background: var(--jkf-card-placeholder);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    font-size: 1.2rem;
+    transition: opacity 0.35s ease;
+    pointer-events: none;
+  }
+  .jkf-card__img-placeholder.is-hide { opacity: 0; }
+
+  /* 图片底部渐隐遮罩 */
+  .jkf-card__overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: var(--jkf-card-overlay);
+    pointer-events: none;
+  }
+
+  /* 水印（右下角） */
+  .jkf-card__watermark {
+    position: absolute;
+    right: 7px;
+    bottom: 7px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-shadow: 0 0 6px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.95);
+    pointer-events: none;
+  }
+
+  /* ---- 第2层：地域标签（叠加在图片底部） ---- */
+  .jkf-card__location {
+    position: absolute;
+    bottom: 8px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    font-size: 0.76rem;
+    color: #fff;
+    text-shadow: 0 1px 5px rgba(0,0,0,0.9);
+    pointer-events: none;
+  }
+  .jkf-card__loc-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .jkf-card__loc-dot--blue { background: var(--jkf-card-blue); }
+  .jkf-card__loc-dot--yellow { background: var(--jkf-card-yellow); }
+
+  /* ---- 第3层：标题 ---- */
+  .jkf-card__title {
+    color: var(--jkf-card-text);
+    font-size: 0.86rem;
+    font-weight: 700;
+    line-height: 1.45;
+    padding: 10px 12px 2px;
+    /* 不截断，显示完整标题 */
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- 第4层：底部交互栏 ---- */
+  .jkf-card__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px 12px;
+    font-size: 0.76rem;
+    color: var(--jkf-card-muted);
+  }
+  .jkf-card__act {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .jkf-card__act i { font-size: 0.8rem; }
+  .jkf-card__act--heart { color: var(--jkf-card-heart); }
+  .jkf-card__act--star  { color: var(--jkf-card-yellow); }
+  .jkf-card__act--eye   { color: var(--jkf-card-eye); }
+  .jkf-card__act--coin  { color: var(--jkf-card-coin); }
+
+  /* ---- 状态区 ---- */
+  .jkf-card-list__state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--jkf-card-muted);
+  }
+  .jkf-card-list__state-icon { font-size: 2.5rem; margin-bottom: 12px; }
+  .jkf-card-list__state-text { font-size: 0.95rem; }
+
+  /* ---- 加载骨架屏 ---- */
+  .jkf-card-skel {
+    background: var(--jkf-card-bg);
+    border: 1px solid var(--jkf-card-border);
+    border-radius: var(--jkf-card-radius);
+    overflow: hidden;
+  }
+  /* 骨架屏也随机高度，更自然 */
+  .jkf-card-skel__img {
+    background: linear-gradient(90deg, var(--jkf-card-placeholder) 25%, #333 50%, var(--jkf-card-placeholder) 75%);
+    background-size: 200% 100%;
+    animation: jkf-shimmer 1.5s ease-in-out infinite;
+  }
+  .jkf-card-skel__img--tall  { height: 260px; }
+  .jkf-card-skel__img--mid   { height: 200px; }
+  .jkf-card-skel__img--short { height: 160px; }
+  .jkf-card-skel__bar {
+    height: 14px;
+    margin: 10px 12px;
+    background: var(--jkf-card-placeholder);
+    border-radius: 4px;
+  }
+  .jkf-card-skel__bar--short { width: 60%; }
+  .jkf-card-skel__bar--row { display: flex; gap: 8px; margin-top: 6px; }
+  .jkf-card-skel__bar--row > div { flex: 1; height: 12px; background: var(--jkf-card-placeholder); border-radius: 4px; }
+
+  @keyframes jkf-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ---- 分页器 ---- */
+  .jkf-card-list__page {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    padding: 24px 0 12px;
+    flex-wrap: wrap;
+  }
+  .jkf-card-list__page-btn {
+    background: var(--jkf-card-bg);
+    border: 1px solid var(--jkf-card-border);
+    color: var(--jkf-card-text);
+    min-width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all var(--jkf-card-transition) ease;
+  }
+  .jkf-card-list__page-btn:hover {
+    background: var(--jkf-card-yellow);
+    color: #1a1a1a;
+    border-color: var(--jkf-card-yellow);
+  }
+  .jkf-card-list__page-btn.is-active {
+    background: var(--jkf-card-yellow);
+    color: #1a1a1a;
+    border-color: var(--jkf-card-yellow);
+    font-weight: 700;
+  }
+  .jkf-card-list__page-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  .jkf-card-list__page-btn:disabled:hover {
+    background: var(--jkf-card-bg);
+    color: var(--jkf-card-text);
+    border-color: var(--jkf-card-border);
+  }
+
+  /* ---- 滚动哨兵 ---- */
+  .jkf-card-list__sentinel { height: 1px; width: 100%; }
+
+  /* ---- 底部"加载更多"指示器（滚动加载时显示，普通文档流位于数据底部） ---- */
+  .jkf-card-list__more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 24px 0 16px;
+    color: var(--jkf-card-muted);
+    font-size: 0.9rem;
+  }
+  .jkf-card-list__more-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--jkf-card-border);
+    border-top-color: var(--jkf-card-yellow);
+    border-radius: 50%;
+    animation: jkf-spin 0.8s linear infinite;
+  }
+  @keyframes jkf-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ---- 登录引导卡（列表加载完毕后显示，引导用户登录解锁更多） ---- */
+  .jkf-card-list__login-prompt {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 32px 16px 24px;
+    margin: 8px 0 0;
+    border-top: 1px solid var(--jkf-card-border);
+    text-align: center;
+  }
+  .jkf-card-list__login-prompt-icon {
+    font-size: 2rem;
+    color: var(--jkf-card-yellow);
+  }
+  .jkf-card-list__login-prompt-text {
+    margin: 0;
+    color: var(--jkf-card-muted);
+    font-size: 0.95rem;
+  }
+  .jkf-card-list__login-prompt-btn {
+    background: var(--jkf-card-yellow);
+    color: #1a1a1a;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 28px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    min-height: 44px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: filter 200ms ease;
+  }
+  .jkf-card-list__login-prompt-btn:hover { filter: brightness(1.1); }
+  .jkf-card-list__login-prompt-btn:focus-visible {
+    outline: 2px solid var(--jkf-card-yellow);
+    outline-offset: 3px;
+  }
+
+  /* ---- 动画偏好 ---- */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+</style>
+
+<!-- ============ 容器结构 ============ -->
+<div class="jkf-card-list" id="{{ card_list_id }}">
+  <!-- 状态区（空 / 加载中 / 错误） -->
+  <div class="jkf-card-list__state" id="{{ card_state_id }}" style="display:none;">
+    <div class="jkf-card-list__state-icon" id="{{ card_state_icon_id }}"></div>
+    <div class="jkf-card-list__state-text" id="{{ card_state_text_id }}"></div>
+  </div>
+
+  <!-- 瀑布流容器（卡片由 JS 动态注入，无 .col 中间层） -->
+  <div class="jkf-card-masonry" id="{{ card_grid_id }}"></div>
+
+  <!-- 底部"加载更多"指示器：滚动到底部自动显示，append 后自动隐藏 -->
+  <div class="jkf-card-list__more" id="{{ card_more_id }}" style="display:none;" role="status" aria-live="polite" aria-hidden="true">
+    <span class="jkf-card-list__more-spinner" aria-hidden="true"></span>
+    <span class="jkf-card-list__more-text" data-i18n="card.loading_more">加载更多…</span>
+  </div>
+
+  <!-- 登录引导卡：列表加载完毕（setEnd）后显示，点击打开登录弹窗 -->
+  <div class="jkf-card-list__login-prompt" id="{{ card_login_prompt_id }}" style="display:none;">
+    <i class="bi bi-lock-fill jkf-card-list__login-prompt-icon" aria-hidden="true"></i>
+    <p class="jkf-card-list__login-prompt-text" data-i18n="card.login_prompt_text">登录后查看更多精彩内容</p>
+    <button type="button" class="jkf-card-list__login-prompt-btn" data-i18n="card.login_prompt_btn">立即登录</button>
+  </div>
+
+  <!-- 分页器（默认隐藏，调用者启用） -->
+  <div class="jkf-card-list__page" id="{{ card_page_id }}" style="display:none;"></div>
+
+  <!-- 滚动哨兵 -->
+  <div class="jkf-card-list__sentinel" id="{{ card_sentinel_id }}"></div>
+</div>
+
+<script>
+/**
+ * SexyChatCardList - 商品卡片流式列表控制器
+ * 职责：卡片渲染、追加、分页、滚动到底部检测、状态管理
+ * 外部调用方式：new SexyChatCardList(containerId, options) 实例化后调用其方法
+ *
+ * 支持三种场景：
+ *   1. 首次加载：cardList.render(items)     —— 清空网格并渲染
+ *   2. 追加更多：cardList.append(items)      —— 不翻页，直接追加到末尾
+ *   3. 分页模式：须先 enablePagination()     —— 自动按 pageSize 分页渲染
+ *
+ * @param {string}   containerId          - 容器 DOM ID（不含 #）
+ * @param {Object}   [options]            - 可选配置
+ * @param {number}   [options.pageSize=20] - 每页卡片数（分页模式用）
+ * @param {Function} [options.onScrollToBottom] - 滚动到底部回调(instance)
+ */
+(function () {
+  "use strict";
+
+  /* ================================================================
+   *  内部工具
+   * ================================================================ */
+
+  /**
+   * 格式化数字：10000→1w，1000→1k，其余保持
+   * @param {number} num
+   * @returns {string}
+   */
+  function formatCount(num) {
+    if (typeof num !== "number" || isNaN(num)) return "0";
+    if (num >= 10000) return (num / 10000).toFixed(1).replace(/\.0$/, "") + "w";
+    if (num >= 1000)  return (num / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    return String(num);
+  }
+
+  /**
+   * 转义 HTML 特殊字符（防 XSS）
+   * @param {string} str
+   * @returns {string}
+   */
+  function escapeHtml(str) {
+    if (!str) return "";
+    var map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+    return String(str).replace(/[&<>"']/g, function (c) { return map[c] || c; });
+  }
+
+  /**
+   * 生成一块卡片 HTML
+   * @param {Object} item - 卡片数据
+   * @param {string} item.imageUrl           - 图片 URL
+   * @param {string} [item.watermark="SPA-20"] - 水印文字
+   * @param {string} [item.district]         - 区县（如"天河区"）
+   * @param {string} [item.province]          - 省份（如"广东"）
+   * @param {string} item.title              - 标题
+   * @param {number} [item.likes=0]          - 点赞数
+   * @param {number} [item.favorites=0]       - 收藏数
+   * @param {number} [item.views=0]          - 浏览数
+   * @param {number} [item.price=0]          - 价格
+   * @param {string} [item.link="#"]         - 跳转链接
+   * @param {number} [item.maxTitleLen=24]   - 标题截断长度（来自 options）
+   * @returns {string} 卡片 HTML 字符串
+   */
+  function buildCardHtml(item, maxTitleLen) {
+    var imgUrl   = item.imageUrl || "";
+    var wm       = item.watermark || "SPA-20";
+    var district = item.district ? escapeHtml(item.district) : "";
+    var province = item.province  ? escapeHtml(item.province)  : "";
+    var rawTitle = item.title     ? escapeHtml(item.title)     : "";
+    var title    = rawTitle.length > maxTitleLen ? rawTitle.slice(0, maxTitleLen) + "…" : rawTitle;
+    var link     = item.link     || "#";
+    var id       = item.id       || "card-" + Math.random().toString(36).slice(2, 8);
+    var likes    = formatCount(item.likes);
+    var favs     = formatCount(item.favorites);
+    var views    = formatCount(item.views);
+    var price    = formatCount(item.price);
+
+    // 地域标签：仅当至少一个字段存在时才渲染整行
+    var locHtml = (district || province)
+      ? '<div class="jkf-card__location">'
+        + (district ? '<span class="jkf-card__loc-dot jkf-card__loc-dot--blue"></span><span>' + district + '</span>' : "")
+        + (province ? '<span class="jkf-card__loc-dot jkf-card__loc-dot--yellow"></span><span>' + province + '</span>' : "")
+        + '</div>'
+      : "";
+
+    return '<a class="jkf-card-item" href="' + link + '" data-id="' + id + '" target="_blank" rel="noopener">'
+      /* 第1层：图片 + 水印 + 地域标签 */
+      +   '<div class="jkf-card__img-wrap">'
+      +     '<img class="jkf-card__img" src="' + imgUrl + '" alt="' + title + '" loading="lazy" onerror="this.style.display=\'none\'">'
+      +     '<div class="jkf-card__img-placeholder"><i class="bi bi-image"></i></div>'
+      +     '<div class="jkf-card__overlay"></div>'
+      +     '<span class="jkf-card__watermark">' + escapeHtml(wm) + '</span>'
+      +     locHtml
+      +   '</div>'
+      /* 第3层：标题 */
+      +   '<div class="jkf-card__title" title="' + rawTitle + '">' + title + '</div>'
+      /* 第4层：底部交互栏 */
+      +   '<div class="jkf-card__actions">'
+      +     '<span class="jkf-card__act jkf-card__act--heart"><i class="bi bi-heart-fill"></i> ' + likes + '</span>'
+      +     '<span class="jkf-card__act jkf-card__act--star"><i class="bi bi-star-fill"></i> ' + favs + '</span>'
+      +     '<span class="jkf-card__act jkf-card__act--eye"><i class="bi bi-eye-fill"></i> ' + views + '</span>'
+      +     '<span class="jkf-card__act jkf-card__act--coin"><i class="bi bi-coin"></i> ' + price + '</span>'
+      +   '</div>'
+      + '</a>';
+  }
+
+  /**
+   * 生成 n 块骨架屏 HTML（加载中占位）
+   * @param {number} n - 数量
+   * @returns {string}
+   */
+  function buildSkeletonHtml(n) {
+    var heights = ["tall", "mid", "short"];
+    var html = "";
+    for (var i = 0; i < n; i++) {
+      var h = heights[i % heights.length];
+      html += '<div class="jkf-card-skel">'
+        +   '<div class="jkf-card-skel__img jkf-card-skel__img--' + h + '"></div>'
+        +   '<div class="jkf-card-skel__bar jkf-card-skel__bar--short"></div>'
+        +   '<div class="jkf-card-skel__bar jkf-card-skel__bar--row"><div></div><div></div><div></div><div></div></div>'
+        + '</div>';
+    }
+    return html;
+  }
+
+  /* ================================================================
+   *  全局暴露
+   * ================================================================ */
+
+  // 实例映射表（防重复初始化 + 外部可通过 window 访问）
+  if (!window.__SexyChatCardListInstances) {
+    window.__SexyChatCardListInstances = new Map();
+  }
+
+  /**
+   * SexyChatCardList 构造器（已暴露到 window）
+   * @constructor
+   * @param {string} containerId - 容器 DOM ID（不含 #）
+   * @param {Object} [options]
+   */
+  window.SexyChatCardList = function SexyChatCardList(containerId, options) {
+    // 防重复初始化
+    if (window.__SexyChatCardListInstances.has(containerId)) {
+      return window.__SexyChatCardListInstances.get(containerId);
+    }
+
+    this.cid       = containerId;
+    this.container = document.getElementById(containerId);
+    if (!this.container) throw new Error("[SexyChatCardList] 容器 #" + containerId + " 不存在");
+
+    this.options = Object.assign({
+      pageSize: 20,
+      maxTitleLen: 24,
+      onScrollToBottom: null
+    }, options);
+
+    /* ---- 内部状态 ---- */
+    this._items      = [];
+    this._page       = 1;
+    this._total      = 0;
+    this._isLoading  = false;
+    this._isEnd      = false;
+    this._pageOn     = false;
+    this._moreLoadingShownAt = 0;    // 底部 loading 显示时间戳，用于最小显示时长计算
+    this._hideMoreTimer = null;     // 底部 loading 延迟隐藏定时器
+    this._pendingAppendItems = null; // 缓冲的待追加数据（loading 最小显示期间）
+    this._pendingAppendTimer = null; // 延迟执行 append 的定时器
+
+    /* ---- DOM 引用 ---- */
+    this._gridEl      = document.getElementById(containerId + "_grid");
+    this._stateEl     = document.getElementById(containerId + "_state");
+    this._stateIconEl = document.getElementById(containerId + "_stateIcon");
+    this._stateTextEl = document.getElementById(containerId + "_stateText");
+    this._pageEl      = document.getElementById(containerId + "_page");
+    this._sentinelEl  = document.getElementById(containerId + "_sentinel");
+    this._moreEl      = document.getElementById(containerId + "_more");
+    this._loginPromptEl = document.getElementById(containerId + "_loginPrompt");
+    this._loginPromptBtnEl = this._loginPromptEl
+      ? this._loginPromptEl.querySelector(".jkf-card-list__login-prompt-btn")
+      : null;
+    // 登录引导按钮点击 → 打开登录弹窗（由登录弹窗组件暴露 window.jkfLoginModal）
+    if (this._loginPromptBtnEl) {
+      this._loginPromptBtnEl.addEventListener("click", function () {
+        if (window.jkfLoginModal && typeof window.jkfLoginModal.open === "function") {
+          window.jkfLoginModal.open();
+        }
+      });
+    }
+
+    // 注册实例
+    window.__SexyChatCardListInstances.set(containerId, this);
+
+    /* ---- 滚动检测 ---- */
+    this._initScrollObserver();
+    /* ---- 卡片点击委托（拦截跳转 → 弹登录框） ---- */
+    this._initCardClickDelegate();
+  };
+
+  /**
+   * 获取已存在的实例
+   * @param {string} containerId
+   * @returns {SexyChatCardList|undefined}
+   */
+  window.SexyChatCardList.getInstance = function (containerId) {
+    return window.__SexyChatCardListInstances.get(containerId);
+  };
+
+  /** 局部引用，供下方 prototype 方法使用 */
+  var SCL = window.SexyChatCardList;
+
+  /** 底部"加载更多"指示器最小显示时长（ms），避免快速 fetch 时 loading 闪烁 */
+  var MORE_LOADING_MIN_MS = 1000;
+
+  /* ================================================================
+   *  私有方法
+   * ================================================================ */
+
+  /**
+   * 初始化 IntersectionObserver 哨兵检测
+   * 哨兵进入视口 → 触发 onScrollToBottom 回调（仅一次 / 非加载 / 非末尾）
+   */
+  SCL.prototype._initScrollObserver = function () {
+    var self = this;
+    if (!window.IntersectionObserver || !self._sentinelEl) return;
+    self._observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        if (self._isLoading || self._isEnd) return;
+        if (typeof self.options.onScrollToBottom === "function") {
+          self._showMoreLoading();
+          self.options.onScrollToBottom(self);
+        }
+      });
+    }, { rootMargin: "150px" });
+    self._observer.observe(self._sentinelEl);
+  };
+
+  /**
+   * 初始化卡片点击事件委托
+   * 当前行为：拦截所有卡片点击，阻止 <a> 默认跳转，弹出登录框
+   * 原因：业务要求"未登录时所有卡片点击先弹登录框"
+   * 后续：接入登录态判断后，已登录则放行跳转，未登录才弹登录框
+   */
+  SCL.prototype._initCardClickDelegate = function () {
+    var self = this;
+    if (!self._gridEl) return;
+    self._cardClickHandler = function (event) {
+      var card = event.target.closest(".jkf-card-item");
+      if (!card) return;
+      // 拦截 <a> 默认跳转与 target=_blank 行为
+      event.preventDefault();
+      // 弹出登录框（由「登录弹窗」组件暴露的全局 API）
+      if (window.jkfLoginModal && typeof window.jkfLoginModal.open === "function") {
+        window.jkfLoginModal.open();
+      }
+      // TODO: 接入登录态后，这里应改为：
+      //   if (isLoggedIn()) { window.open(card.href, "_blank"); }
+      //   else { window.jkfLoginModal.open(); }
+      // 原因：当前无登录态系统，业务要求统一弹窗；后续接入登录态后，已登录用户点击应直接跳转
+    };
+    self._gridEl.addEventListener("click", self._cardClickHandler);
+  };
+
+  /**
+   * 销毁观察器（清理用）
+   */
+  SCL.prototype._destroyObserver = function () {
+    if (this._observer && this._sentinelEl) {
+      this._observer.unobserve(this._sentinelEl);
+      this._observer.disconnect();
+      this._observer = null;
+    }
+  };
+
+  /**
+   * 显示状态区
+   * @param {string} iconClass - Bootstrap Icons 类名（如 "bi-inbox"）
+   * @param {string} text      - 状态文字
+   */
+  SCL.prototype._showState = function (iconClass, text) {
+    if (this._stateEl)     this._stateEl.style.display = "";
+    if (this._stateIconEl) this._stateIconEl.innerHTML = '<i class="bi ' + iconClass + '"></i>';
+    if (this._stateTextEl) this._stateTextEl.textContent = text;
+  };
+
+  /**
+   * 隐藏状态区
+   */
+  SCL.prototype._hideState = function () {
+    if (this._stateEl) this._stateEl.style.display = "none";
+  };
+
+  /**
+   * 显示底部"加载更多"指示器
+   * 触发时机：IntersectionObserver 命中哨兵，onScrollToBottom 调用前
+   * 记录显示时间戳，并取消任何 pending 的延迟隐藏（防止与本次显示冲突）
+   */
+  SCL.prototype._showMoreLoading = function () {
+    if (!this._moreEl) return;
+    if (this._hideMoreTimer) {
+      clearTimeout(this._hideMoreTimer);
+      this._hideMoreTimer = null;
+    }
+    this._moreEl.style.display = "";
+    this._moreEl.setAttribute("aria-hidden", "false");
+    this._moreLoadingShownAt = Date.now();
+  };
+
+  /**
+   * 隐藏底部"加载更多"指示器
+   * 触发时机：append 追加新数据后 / setEnd 标记无更多 / render/clear 重置
+   * 最小显示 MORE_LOADING_MIN_MS，避免快速 fetch 时 loading 一闪而过；
+   * 若已超最小时长立即隐藏，否则延迟补足差额
+   */
+  SCL.prototype._hideMoreLoading = function () {
+    if (!this._moreEl) return;
+    if (this._hideMoreTimer) {
+      clearTimeout(this._hideMoreTimer);
+      this._hideMoreTimer = null;
+    }
+    var elapsed = Date.now() - (this._moreLoadingShownAt || 0);
+    if (elapsed >= MORE_LOADING_MIN_MS) {
+      this._moreEl.style.display = "none";
+      this._moreEl.setAttribute("aria-hidden", "true");
+      return;
+    }
+    var self = this;
+    var remaining = MORE_LOADING_MIN_MS - elapsed;
+    this._hideMoreTimer = setTimeout(function () {
+      self._hideMoreTimer = null;
+      if (self._moreEl) {
+        self._moreEl.style.display = "none";
+        self._moreEl.setAttribute("aria-hidden", "true");
+      }
+    }, remaining);
+  };
+
+  /**
+   * 渲染分页器按钮组
+   * 当 _pageOn && _total > 0 时渲染
+   */
+  SCL.prototype._renderPagination = function () {
+    if (!this._pageOn || !this._pageEl) return;
+    var totalPages = Math.ceil(this._total / this.options.pageSize);
+    if (totalPages <= 1) { this._pageEl.style.display = "none"; return; }
+    this._pageEl.style.display = "";
+
+    var self = this;
+    var html = "";
+    // 上一页
+    html += '<button class="jkf-card-list__page-btn" data-page="prev"'
+      + (self._page <= 1 ? ' disabled' : '') + '><i class="bi bi-chevron-left"></i></button>';
+
+    // 页码（最多显示 7 个，含首尾和省略）
+    var pages = self._calcPageNumbers(self._page, totalPages, 7);
+    pages.forEach(function (p) {
+      if (p === "…") {
+        html += '<span style="color:var(--jkf-card-muted);padding:0 4px;">…</span>';
+      } else {
+        html += '<button class="jkf-card-list__page-btn' + (p === self._page ? ' is-active' : '') + '" data-page="' + p + '">' + p + '</button>';
+      }
+    });
+
+    // 下一页
+    html += '<button class="jkf-card-list__page-btn" data-page="next"'
+      + (self._page >= totalPages ? ' disabled' : '') + '><i class="bi bi-chevron-right"></i></button>';
+
+    this._pageEl.innerHTML = html;
+
+    // 事件委托：点击页码跳转
+    this._pageEl.removeEventListener("click", this._pageClickHandler);
+    this._pageClickHandler = function (e) {
+      var btn = e.target.closest("button[data-page]");
+      if (!btn || btn.disabled) return;
+      var target = btn.getAttribute("data-page");
+      var newPage;
+      if (target === "prev") newPage = self._page - 1;
+      else if (target === "next") newPage = self._page + 1;
+      else newPage = parseInt(target, 10);
+      if (isNaN(newPage) || newPage < 1 || newPage > totalPages) return;
+      if (newPage === self._page) return;
+      self._page = newPage;
+      self._renderCurrentPage();
+      if (typeof self.options.onPageChange === "function") {
+        self.options.onPageChange(newPage, self);
+      }
+    };
+    this._pageEl.addEventListener("click", this._pageClickHandler);
+  };
+
+  /**
+   * 计算分页显示列表（带省略号逻辑）
+   * @param {number} current - 当前页
+   * @param {number} total   - 总页数
+   * @param {number} maxBtn  - 最多显示按钮数
+   * @returns {Array<number|string>}
+   */
+  SCL.prototype._calcPageNumbers = function (current, total, maxBtn) {
+    if (total <= maxBtn) {
+      var arr = [];
+      for (var i = 1; i <= total; i++) arr.push(i);
+      return arr;
+    }
+    var half = Math.floor((maxBtn - 2) / 2);
+    var left = Math.max(2, current - half);
+    var right = Math.min(total - 1, current + half);
+    // 动态补偿
+    if (current - half <= 2) right = maxBtn - 1;
+    if (current + half >= total - 1) left = total - maxBtn + 2;
+
+    var result = [1];
+    if (left > 2) result.push("…");
+    for (var j = left; j <= right; j++) result.push(j);
+    if (right < total - 1) result.push("…");
+    if (total > 1) result.push(total);
+    return result;
+  };
+
+  /**
+   * 渲染当前页（从 _items 中按 pageSize 切片）
+   */
+  SCL.prototype._renderCurrentPage = function () {
+    var start = (this._page - 1) * this.options.pageSize;
+    var end   = start + this.options.pageSize;
+    var pageItems = this._items.slice(start, end);
+    this._renderHtml(pageItems);
+    this._renderPagination();
+  };
+
+  /**
+   * 将 items 数组渲染为 HTML 填入网格
+   * @param {Array} items
+   */
+  SCL.prototype._renderHtml = function (items) {
+    var self = this;
+    var html = items.map(function (item) {
+      return buildCardHtml(item, self.options.maxTitleLen);
+    }).join("");
+    this._gridEl.innerHTML = html;
+    // 图片加载完成后隐藏占位符
+    Array.from(this._gridEl.querySelectorAll(".jkf-card__img")).forEach(function (img) {
+      var placeholder = img.parentElement.querySelector(".jkf-card__img-placeholder");
+      if (!placeholder) return;
+      if (img.complete && img.naturalWidth > 0) {
+        placeholder.classList.add("is-hide");
+      } else {
+        img.addEventListener("load", function () { placeholder.classList.add("is-hide"); });
+        img.addEventListener("error", function () { placeholder.classList.add("is-hide"); });
+      }
+    });
+  };
+
+  /* ================================================================
+   *  公开 API（供外部调用者使用）
+   * ================================================================ */
+
+  /**
+   * 渲染数据（首次加载/刷新时使用）
+   * 清空网格、重置状态，压入全量数据
+   * @param {Array} items - 卡片数据数组
+   * @example cardList.render(apiResponse.data)
+   */
+  SCL.prototype.render = function (items) {
+    if (!Array.isArray(items)) return;
+    this._items = items.slice();
+    this._page  = 1;
+    this._isEnd = false;
+    this._cancelPendingAppend();
+    this._hideState();
+    this._hideMoreLoading();
+    this._hideLoginPrompt();
+
+    if (items.length === 0) {
+      this._gridEl.innerHTML = "";
+      this._showState("bi-inbox", "暂无数据");
+      return;
+    }
+
+    if (this._pageOn) {
+      this._renderCurrentPage();
+    } else {
+      this._renderHtml(items);
+      this._pageEl.style.display = "none";
+    }
+  };
+
+  /**
+   * 追加更多数据（滚动加载 / 分页加载时使用）
+   * 底部 loading 最小显示期间，缓冲数据延迟到期满再实际追加，
+   * 避免"数据先出现 loading 后消失"的视觉矛盾
+   * @param {Array} items - 新卡片数据数组
+   * @example cardList.append(apiResponse.data)
+   */
+  SCL.prototype.append = function (items) {
+    if (this._moreLoadingShownAt) {
+      var elapsed = Date.now() - this._moreLoadingShownAt;
+      if (elapsed < MORE_LOADING_MIN_MS) {
+        var self = this;
+        if (this._pendingAppendTimer) clearTimeout(this._pendingAppendTimer);
+        this._pendingAppendItems = items;
+        this._pendingAppendTimer = setTimeout(function () {
+          self._pendingAppendTimer = null;
+          var pending = self._pendingAppendItems;
+          self._pendingAppendItems = null;
+          self._moreLoadingShownAt = 0;
+          self._doAppend(pending);
+        }, MORE_LOADING_MIN_MS - elapsed);
+        return;
+      }
+    }
+    this._moreLoadingShownAt = 0;
+    this._doAppend(items);
+  };
+
+  /**
+   * 实际执行追加（已脱离 loading 最小显示期控制）
+   * @param {Array} items - 新卡片数据数组
+   */
+  SCL.prototype._doAppend = function (items) {
+    this._hideMoreLoading();
+    if (!Array.isArray(items) || items.length === 0) {
+      this._isEnd = true;
+      return;
+    }
+    this._items = this._items.concat(items);
+    this._hideState();
+
+    if (this._pageOn) {
+      this._renderCurrentPage();
+    } else {
+      var self = this;
+      var html = items.map(function (item) {
+        return buildCardHtml(item, self.options.maxTitleLen);
+      }).join("");
+      this._gridEl.insertAdjacentHTML("beforeend", html);
+      var newImgs = this._gridEl.querySelectorAll(".jkf-card__img:not([data-img-processed])");
+      Array.from(newImgs).forEach(function (img) {
+        var placeholder = img.parentElement.querySelector(".jkf-card__img-placeholder");
+        if (!placeholder) return;
+        if (img.complete && img.naturalWidth > 0) {
+          placeholder.classList.add("is-hide");
+        } else {
+          img.addEventListener("load", function () { placeholder.classList.add("is-hide"); });
+          img.addEventListener("error", function () { placeholder.classList.add("is-hide"); });
+        }
+      });
+    }
+  };
+
+  /**
+   * 取消缓冲中的延迟 append（render/clear/showLoading 重置时调用，避免旧数据污染）
+   */
+  SCL.prototype._cancelPendingAppend = function () {
+    if (this._pendingAppendTimer) {
+      clearTimeout(this._pendingAppendTimer);
+      this._pendingAppendTimer = null;
+      this._pendingAppendItems = null;
+    }
+  };
+
+  /**
+   * 显示底部登录引导卡
+   * 触发时机：setEnd(true) 列表加载完毕，提示用户登录后查看更多
+   */
+  SCL.prototype._showLoginPrompt = function () {
+    if (this._loginPromptEl) this._loginPromptEl.style.display = "";
+  };
+
+  /**
+   * 隐藏底部登录引导卡
+   * 触发时机：render/clear/showLoading 重置列表
+   */
+  SCL.prototype._hideLoginPrompt = function () {
+    if (this._loginPromptEl) this._loginPromptEl.style.display = "none";
+  };
+
+  /**
+   * 清空所有卡片与状态
+   */
+  SCL.prototype.clear = function () {
+    this._items = [];
+    this._page  = 1;
+    this._isEnd = false;
+    this._gridEl.innerHTML = "";
+    this._cancelPendingAppend();
+    this._hideState();
+    this._hideMoreLoading();
+    this._hideLoginPrompt();
+    if (this._pageEl) this._pageEl.style.display = "none";
+  };
+
+  /**
+   * 显示加载骨架屏
+   * @param {number} [count=10] - 骨架数量
+   */
+  SCL.prototype.showLoading = function (count) {
+    this._isLoading = true;
+    this._cancelPendingAppend();
+    this._hideState();
+    this._hideMoreLoading();
+    this._hideLoginPrompt();
+    this._gridEl.innerHTML = buildSkeletonHtml(count || 10);
+  };
+
+  /**
+   * 隐藏加载状态
+   */
+  SCL.prototype.hideLoading = function () {
+    this._isLoading = false;
+    this._hideMoreLoading();
+  };
+
+  /**
+   * 设置总数据条数（供分页器计算总页数）
+   * @param {number} total
+   */
+  SCL.prototype.setTotal = function (total) {
+    this._total = typeof total === "number" ? total : 0;
+    if (this._pageOn) this._renderPagination();
+  };
+
+  /**
+   * 启用分页模式
+   * 分页模式下：render/append 自动按 pageSize 分页，显示底部页码
+   * @param {Function} [onPageChange] - 页码切换回调(page, instance)
+   */
+  SCL.prototype.enablePagination = function (onPageChange) {
+    if (this._pageOn) return;
+    this._pageOn = true;
+    if (typeof onPageChange === "function") this.options.onPageChange = onPageChange;
+    if (this._items.length > 0) this._renderCurrentPage();
+    else this._pageEl.style.display = "";
+  };
+
+  /**
+   * 禁用分页模式，恢复流式
+   */
+  SCL.prototype.disablePagination = function () {
+    this._pageOn = false;
+    if (this._pageEl) this._pageEl.style.display = "none";
+    if (this._items.length > 0) this._renderHtml(this._items);
+  };
+
+  /**
+   * 设置滚动到底部回调
+   * @param {Function} fn - (instance) => void
+   */
+  SCL.prototype.setOnScrollToBottom = function (fn) {
+    this.options.onScrollToBottom = typeof fn === "function" ? fn : null;
+  };
+
+  /**
+   * 手动触发滚动到底部回调（供外部跳转后调用）
+   */
+  SCL.prototype.triggerScrollToBottom = function () {
+    if (this._isLoading || this._isEnd) return;
+    if (typeof this.options.onScrollToBottom === "function") {
+      this.options.onScrollToBottom(this);
+    }
+  };
+
+  /**
+   * 设置是否已无更多数据
+   * @param {boolean} isEnd
+   */
+  SCL.prototype.setEnd = function (isEnd) {
+    this._isEnd = !!isEnd;
+    if (isEnd) {
+      this._hideMoreLoading();
+      this._showLoginPrompt();
+    } else {
+      this._hideLoginPrompt();
+    }
+  };
+
+  /**
+   * 获取当前数据
+   * @returns {Array}
+   */
+  SCL.prototype.getItems = function () {
+    return this._items.slice();
+  };
+
+  /**
+   * 获取当前页码
+   * @returns {number}
+   */
+  SCL.prototype.getPage = function () {
+    return this._page;
+  };
+
+  /**
+   * 销毁实例（清理事件与观察器）
+   */
+  SCL.prototype.destroy = function () {
+    this._destroyObserver();
+    if (this._pageEl) {
+      this._pageEl.removeEventListener("click", this._pageClickHandler);
+    }
+    if (this._gridEl && this._cardClickHandler) {
+      this._gridEl.removeEventListener("click", this._cardClickHandler);
+    }
+    this._items  = [];
+    this._gridEl.innerHTML = "";
+    this._hideState();
+    if (window.__SexyChatCardListInstances) {
+      window.__SexyChatCardListInstances.delete(this.cid);
+    }
+  };
+
+})();
+</script>

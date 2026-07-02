@@ -1,0 +1,259 @@
+{% load static %}
+<!-- 欢迎横幅组件：Liquid Glass × Dark OLED 风格，深黑 + 金色高级质感 -->
+<!-- 设计参考：ui-ux-pro-max 设计系统（Liquid Glass + Dark OLED + Cormorant/Montserrat） -->
+<!-- 依赖 Bootstrap Icons（已在 template.html 统一引入）；登录弹窗 window.jkfLoginModal.open() -->
+
+<style>
+  /* 高级字体：Cormorant 衬线（标题）+ Montserrat 无衬线（正文） */
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500;600;700&family=Montserrat:wght@300;400;500;600&display=swap');
+
+  /* === CSS 变量集中管理（颜色/间距/动画时长）=== */
+  :root {
+    --jkf-hero-bg: #0A0A0A;              /* 主背景（深黑带层次） */
+    --jkf-hero-text: #F5F5F4;            /* 主文字（暖白，非纯白更高级） */
+    --jkf-hero-muted: #A8A29E;           /* 次要文字（暖灰） */
+    --jkf-hero-gold: #CA8A04;           /* 品牌金（沉稳） */
+    --jkf-hero-gold-bright: #EAB308;    /* 高亮金（CTA 渐变亮端） */
+    --jkf-hero-purple: #581C87;         /* 暗紫（光斑氛围色） */
+    --jkf-hero-glass: rgba(255, 255, 255, 0.04); /* 玻璃面板底色 */
+    --jkf-hero-border: rgba(202, 138, 4, 0.25); /* 金色描边 */
+    --jkf-hero-radius: 16px;            /* 圆角 */
+    --jkf-hero-transition: 500ms;       /* 流体动画时长（Liquid Glass 推荐 400-600ms） */
+  }
+
+  .jkf-hero {
+    position: relative;
+    background: var(--jkf-hero-bg);
+    border-radius: var(--jkf-hero-radius);
+    padding: 56px 32px;
+    margin-bottom: 28px;
+    color: var(--jkf-hero-text);
+    text-align: center;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  /* 背景光斑：金色 + 暗紫，缓慢漂浮营造氛围深度（Liquid Glass morphing） */
+  .jkf-hero__glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.5;
+    pointer-events: none;
+    will-change: transform;
+  }
+  .jkf-hero__glow--gold {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, var(--jkf-hero-gold) 0%, transparent 70%);
+    top: -120px;
+    right: -80px;
+    animation: jkf-hero-float-gold 18s ease-in-out infinite;
+  }
+  .jkf-hero__glow--purple {
+    width: 360px;
+    height: 360px;
+    background: radial-gradient(circle, var(--jkf-hero-purple) 0%, transparent 70%);
+    bottom: -120px;
+    left: -60px;
+    animation: jkf-hero-float-purple 22s ease-in-out infinite;
+  }
+  @keyframes jkf-hero-float-gold {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50%      { transform: translate(-40px, 30px) scale(1.1); }
+  }
+  @keyframes jkf-hero-float-purple {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50%      { transform: translate(30px, -20px) scale(0.95); }
+  }
+
+  /* 网格纹理叠加：增加质感与空间纵深 */
+  .jkf-hero__grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+            mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  }
+
+  /* 内容层：相对定位上浮，确保在光斑之上 */
+  .jkf-hero__content {
+    position: relative;
+    z-index: 1;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* 顶部小徽章：玻璃质感（backdrop-filter） */
+  .jkf-hero__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: var(--jkf-hero-glass);
+    border: 1px solid var(--jkf-hero-border);
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+    color: var(--jkf-hero-gold-bright);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    margin-bottom: 24px;
+  }
+  .jkf-hero__badge i { font-size: 0.7rem; }
+
+  /* 标题：Cormorant 衬线，优雅高级，微金色 glow */
+  .jkf-hero__title {
+    font-family: 'Cormorant', serif;
+    font-size: 2.75rem;
+    font-weight: 500;
+    line-height: 1.15;
+    margin: 0 0 16px;
+    letter-spacing: 0.5px;
+    color: var(--jkf-hero-text);
+    text-shadow: 0 0 40px rgba(202, 138, 4, 0.3);
+  }
+  /* 品牌名：金色渐变文字，斜体强调 */
+  .jkf-hero__title em {
+    font-style: italic;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--jkf-hero-gold-bright) 0%, var(--jkf-hero-gold) 100%);
+    -webkit-background-clip: text;
+            background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* 副文案：Montserrat，轻字重，暖灰 */
+  .jkf-hero__subtitle {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 1rem;
+    font-weight: 300;
+    color: var(--jkf-hero-muted);
+    margin: 0 auto 36px;
+    line-height: 1.6;
+    max-width: 480px;
+  }
+
+  /* CTA 按钮：金色渐变，流体 hover + 光泽扫过 */
+  .jkf-hero__btn {
+    font-family: 'Montserrat', sans-serif;
+    background: linear-gradient(135deg, var(--jkf-hero-gold-bright) 0%, var(--jkf-hero-gold) 100%);
+    color: #1A1A1A;
+    border: none;
+    border-radius: 999px;
+    padding: 14px 40px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    min-height: 48px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(202, 138, 4, 0.3),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    transition: transform var(--jkf-hero-transition) cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow var(--jkf-hero-transition) ease,
+                filter var(--jkf-hero-transition) ease;
+  }
+  /* 光泽扫过：hover 时一道高光从左掠到右 */
+  .jkf-hero__btn::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transition: left 600ms ease;
+  }
+  .jkf-hero__btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(202, 138, 4, 0.4),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+    filter: brightness(1.05);
+  }
+  .jkf-hero__btn:hover::before { left: 100%; }
+  .jkf-hero__btn:active { transform: translateY(0); }
+  .jkf-hero__btn:focus-visible {
+    outline: 2px solid var(--jkf-hero-gold-bright);
+    outline-offset: 4px;
+  }
+
+  /* === 响应式断点 === */
+  @media (min-width: 768px) {
+    .jkf-hero { padding: 72px 48px; }
+    .jkf-hero__title { font-size: 3.5rem; }
+    .jkf-hero__subtitle { font-size: 1.1rem; }
+  }
+  @media (min-width: 1200px) {
+    .jkf-hero__title { font-size: 4rem; }
+  }
+  @media (max-width: 575.98px) {
+    .jkf-hero { padding: 40px 20px; }
+    .jkf-hero__title { font-size: 2rem; }
+    .jkf-hero__subtitle { font-size: 0.9rem; margin-bottom: 28px; }
+    .jkf-hero__btn { padding: 12px 32px; font-size: 0.9rem; }
+    .jkf-hero__glow--gold { width: 280px; height: 280px; }
+    .jkf-hero__glow--purple { width: 240px; height: 240px; }
+  }
+
+  /* 尊重用户的减少动画偏好 */
+  @media (prefers-reduced-motion: reduce) {
+    .jkf-hero__glow { animation: none; }
+    .jkf-hero__btn,
+    .jkf-hero__btn::before { transition: none; }
+    .jkf-hero__btn:hover { transform: none; }
+  }
+</style>
+
+<section class="jkf-hero" aria-labelledby="jkfHeroTitle">
+  <!-- 背景氛围层：光斑 + 网格（纯装饰，aria-hidden） -->
+  <div class="jkf-hero__glow jkf-hero__glow--gold" aria-hidden="true"></div>
+  <div class="jkf-hero__glow jkf-hero__glow--purple" aria-hidden="true"></div>
+  <div class="jkf-hero__grid" aria-hidden="true"></div>
+
+  <!-- 内容层 -->
+  <div class="jkf-hero__content">
+    <span class="jkf-hero__badge">
+      <i class="bi bi-stars" aria-hidden="true"></i>
+      <span data-i18n="hero.badge">尊享体验</span>
+    </span>
+    <h1 class="jkf-hero__title" id="jkfHeroTitle">
+      <span data-i18n="hero.title">欢迎来到</span> <em data-i18n="hero.brand">SexyChat</em>
+    </h1>
+    <p class="jkf-hero__subtitle" data-i18n="hero.subtitle">登录后即可解锁更多精彩内容</p>
+    <button type="button" class="jkf-hero__btn" id="jkfHeroLoginBtn">
+      <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+      <span data-i18n="hero.login_btn">立即登录</span>
+    </button>
+  </div>
+</section>
+
+<script>
+  /**
+   * 欢迎横幅交互脚本
+   * 职责：点击「立即登录」按钮打开登录弹窗
+   * 依赖：登录弹窗组件暴露的 window.jkfLoginModal.open()
+   */
+  (function () {
+    "use strict";
+    var btn = document.getElementById("jkfHeroLoginBtn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      if (window.jkfLoginModal && typeof window.jkfLoginModal.open === "function") {
+        window.jkfLoginModal.open();
+      }
+    });
+  })();
+</script>

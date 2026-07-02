@@ -1,0 +1,167 @@
+{% extends 'template.html' %}
+
+{% block title %}SexyChat - 首页{% endblock %}
+{% block head %}{% endblock %}
+
+{% block body %}
+    {% include '子组件/顶部通栏导航.html' %}
+
+    <!-- ============ 页面主体内容区 ============ -->
+    <main class="container py-4">
+      <!-- 欢迎横幅：引导未登录用户先登录解锁更多内容 -->
+      {% include '子组件/欢迎横幅.html' %}
+
+      <h2 class="text-white mb-3 fw-bold fs-5" data-i18n="home.recommend">推荐内容</h2>
+
+      <!-- 引入商品卡片流式列表组件 -->
+      {% include '子组件/商品卡片流式列表.html' with card_list_id="recommendList" card_state_id="recommendList_state" card_state_icon_id="recommendList_stateIcon" card_state_text_id="recommendList_stateText" card_grid_id="recommendList_grid" card_page_id="recommendList_page" card_sentinel_id="recommendList_sentinel" card_more_id="recommendList_more" card_login_prompt_id="recommendList_loginPrompt" %}
+    </main>
+{% endblock %}
+
+{% block js %}
+<script>
+  /**
+   * 首页卡片列表控制器
+   * 职责：
+   *   1. 调用后端 API /api/cards/<country>/?page=&count=&style= 拉取数据
+   *   2. 首次加载按当前选中国家 + 风格渲染首页
+   *   3. 监听 jkfCountryChange / jkfStyleChange 事件，重置列表并重新拉取
+   *   4. 滚动到底部回调中追加下一页
+   * 依赖：SexyChatCardList（由商品卡片流式列表组件提供）
+   *       jkfSwitcher（由国家语言切换器组件提供，含 getStyle/setStyle）
+   */
+  (function () {
+    "use strict";
+
+    /** 商品卡片 API 基础路径（按国家过滤） */
+    var API_BASE = "/api/cards/";
+    /** 单页拉取条数（与组件 pageSize 保持一致） */
+    var PAGE_SIZE = 20;
+
+    /**
+     * 取当前选中国家代码
+     * 兜底 "CN"：避免切换器组件未就绪（如 JS 报错）时整页卡死
+     * @returns {string} 国家代码（如 "CN"）
+     */
+    function getCurrentCountry() {
+      if (window.jkfSwitcher && typeof window.jkfSwitcher.getCountry === "function") {
+        return window.jkfSwitcher.getCountry();
+      }
+      return "CN";
+    }
+
+    /**
+     * 取当前选中风格
+     * 兜底 ""（全部）：避免切换器未就绪时卡死
+     * @returns {string} 风格代码（"" / "loli" / "queen" / "hot" / "pure"）
+     */
+    function getCurrentStyle() {
+      if (window.jkfSwitcher && typeof window.jkfSwitcher.getStyle === "function") {
+        return window.jkfSwitcher.getStyle();
+      }
+      return "";
+    }
+
+    /**
+     * 调用后端 API 拉取卡片数据
+     * @param {string} country - 国家代码
+     * @param {number} page    - 页码（1 起）
+     * @param {number} count   - 单页条数
+     * @param {string} style   - 风格过滤（空字符串表示全部）
+     * @returns {Promise<{items:Array<Object>, hasMore:boolean}>}
+     *   失败时 reject，由调用方 catch 兜底
+     */
+    function fetchCardItems(country, page, count, style) {
+      var url = API_BASE + encodeURIComponent(country) + "/?page=" + page + "&count=" + count;
+      if (style) {
+        url += "&style=" + encodeURIComponent(style);
+      }
+      return fetch(url, { credentials: "same-origin" })
+        .then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          return {
+            items: Array.isArray(data.items) ? data.items : [],
+            hasMore: !!data.hasMore
+          };
+        });
+    }
+
+    // ==============================================================
+    //  1. 实例化卡片列表组件
+    // ==============================================================
+    var cardList = new SexyChatCardList("recommendList", {
+      pageSize: PAGE_SIZE,
+      maxTitleLen: 999,  // 设为较大值，不截断标题
+      /**
+       * 滚动到底部：拉取下一页并追加
+       * 不调用 showLoading：该方法会重置 grid innerHTML，导致已加载卡片丢失
+       * @param {SexyChatCardList} instance - 当前实例
+       */
+      onScrollToBottom: function (instance) {
+        var country = getCurrentCountry();
+        var style = getCurrentStyle();
+        var nextPage = instance.getPage() + 1;
+        fetchCardItems(country, nextPage, PAGE_SIZE, style)
+          .then(function (result) {
+            instance.append(result.items);
+            if (!result.hasMore) instance.setEnd(true);
+          })
+          .catch(function () {
+            // 网络失败时停止继续加载，避免无限重试
+            instance.setEnd(true);
+          });
+      }
+    });
+
+    // ==============================================================
+    //  2. 加载指定国家的首页数据
+    //    首次加载 + 切换国家/风格时复用：先骨架屏占位，再 fetch + render
+    // ==============================================================
+    /**
+     * @param {string} country - 国家代码
+     * @param {string} style   - 风格代码
+     */
+    function loadFirstPage(country, style) {
+      cardList.showLoading(10);
+      fetchCardItems(country, 1, PAGE_SIZE, style)
+        .then(function (result) {
+          cardList.render(result.items);
+          cardList.hideLoading();
+          if (!result.hasMore) cardList.setEnd(true);
+        })
+        .catch(function () {
+          cardList.hideLoading();
+          cardList.setEnd(true);
+        });
+    }
+
+    // ==============================================================
+    //  3. 首次加载
+    // ==============================================================
+    loadFirstPage(getCurrentCountry(), getCurrentStyle());
+
+    // ==============================================================
+    //  4. 监听国家切换：重新拉取首页数据
+    //    事件由「国家语言切换器」组件 dispatch，detail.country 为新国家代码
+    //    render() 内部会重置 _page=1 / _isEnd=false，无需手动 clear
+    // ==============================================================
+    window.addEventListener("jkfCountryChange", function (event) {
+      var country = (event.detail && event.detail.country) || getCurrentCountry();
+      // 国家切换时风格已被重置为"全部", use getCurrentStyle to be safe
+      loadFirstPage(country, getCurrentStyle());
+    });
+
+    // ==============================================================
+    //  5. 监听风格切换：重新拉取首页数据
+    //    事件由「风格筛选条」dispatch，detail.style 为新风格代码
+    // ==============================================================
+    window.addEventListener("jkfStyleChange", function (event) {
+      var style = (event.detail && event.detail.style) || "";
+      loadFirstPage(getCurrentCountry(), style);
+    });
+  })();
+</script>
+{% endblock %}

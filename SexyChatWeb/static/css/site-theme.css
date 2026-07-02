@@ -1,0 +1,94 @@
+/* =============================================================
+ * SexyChat 站点主题样式（site-theme.css）
+ * 全局背景、body 基础色调、滚动条等公共样式
+ * 引入方式：在 template.html 的 <head> 中统一引入
+ * ============================================================= */
+
+/* ---- CSS 变量（覆盖 / 扩展 Bootstrap） ---- */
+:root {
+  /* 背景层级 */
+  --sc-bg-page: #0f0f0f;           /* 页面最底层背景 */
+  --sc-bg-section: #151515;        /* 区块背景（比 page 亮一档） */
+  --sc-bg-card: #1e1e1e;           /* 卡片 / 容器背景 */
+  --sc-bg-elevated: #252525;       /* 浮层 / 下拉菜单背景 */
+
+  /* 文字色 */
+  --sc-text-primary: #f0f0f0;
+  --sc-text-secondary: #b0b0b0;
+  --sc-text-muted: #777;
+
+  /* 边框 / 分割线 */
+  --sc-border: #2a2a2a;
+
+  /* 品牌色 */
+  --sc-brand: #ffc107;             /* 金色主色（与导航 hover 一致） */
+  --sc-brand-hover: #ffca2b;
+
+  /* 字体 */
+  --sc-font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+
+  /* 滚动条 */
+  --sc-scrollbar-track: #1a1a1a;
+  --sc-scrollbar-thumb: #3a3a3a;
+  --sc-scrollbar-thumb-hover: #555;
+}
+
+/* ---- Body 基础 ---- */
+body {
+  font-family: var(--sc-font-family);
+  background: var(--sc-bg-page);
+  color: var(--sc-text-primary);
+  min-height: 100vh;
+  /* 微妙的网格纹理叠加，增加视觉层次感 */
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(255, 193, 7, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(124, 58, 237, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 80%, rgba(239, 68, 68, 0.02) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* ---- 链接 ---- */
+a {
+  color: var(--sc-text-primary);
+  text-decoration: none;
+  transition: color 200ms ease;
+}
+a:hover {
+  color: var(--sc-brand);
+}
+
+/* ---- 滚动条（Webkit 内核） ---- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sc-scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sc-scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sc-scrollbar-thumb-hover);
+}
+
+/* ---- 选中文本高亮 ---- */
+::selection {
+  background: rgba(255, 193, 7, 0.3);
+  color: #fff;
+}
+
+/* ---- 图片默认行为 ---- */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---- 尊重减少动画偏好 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

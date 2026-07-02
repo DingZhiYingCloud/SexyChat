@@ -1,0 +1,161 @@
+{% load static %}
+<!-- 返回顶部按钮组件：依赖 Bootstrap 5.3 + Bootstrap Icons（已在 template.html 统一引入） -->
+<!-- 全局浮动按钮：滚动超过阈值后淡入，点击带 ease-out 动画平滑滚回顶部 -->
+
+<style>
+  /* === 返回顶部按钮样式（JKF 金色主题，复用导航栏登录按钮配色）=== */
+  :root {
+    --jkf-backtop-bg: #ffc107;        /* 按钮背景（品牌金） */
+    --jkf-backtop-text: #1a1a1a;      /* 图标色 */
+    --jkf-backtop-hover: #ffd454;     /* hover 高亮 */
+    --jkf-backtop-shadow: rgba(0, 0, 0, 0.35); /* 阴影色 */
+    --jkf-backtop-size: 48px;         /* 按钮尺寸 */
+    --jkf-backtop-transition: 300ms;  /* 淡入/上移过渡时长 */
+    --jkf-backtop-scroll-duration: 450ms; /* 滚动动画时长 */
+  }
+
+  .jkf-backtop {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: var(--jkf-backtop-size);
+    height: var(--jkf-backtop-size);
+    border-radius: 50%;
+    background: var(--jkf-backtop-bg);
+    color: var(--jkf-backtop-text);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    cursor: pointer;
+    /* 初始隐藏：透明 + 下移 */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(16px);
+    transition: opacity var(--jkf-backtop-transition) ease,
+                transform var(--jkf-backtop-transition) ease,
+                visibility 0s linear var(--jkf-backtop-transition),
+                background var(--jkf-backtop-transition) ease;
+    z-index: 1030;
+    box-shadow: 0 4px 12px var(--jkf-backtop-shadow);
+  }
+  .jkf-backtop.is-visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: opacity var(--jkf-backtop-transition) ease,
+                transform var(--jkf-backtop-transition) ease,
+                visibility 0s,
+                background var(--jkf-backtop-transition) ease;
+  }
+  .jkf-backtop:hover { background: var(--jkf-backtop-hover); }
+  .jkf-backtop:focus-visible {
+    outline: 2px solid var(--jkf-backtop-bg);
+    outline-offset: 3px;
+  }
+
+  /* 超小屏：缩小尺寸并贴近边缘 */
+  @media (max-width: 575.98px) {
+    .jkf-backtop {
+      right: 16px;
+      bottom: 16px;
+      width: 44px;
+      height: 44px;
+      font-size: 1.1rem;
+    }
+  }
+
+  /* 尊重用户的减少动画偏好：滚动用瞬时，淡入保留快速过渡 */
+  @media (prefers-reduced-motion: reduce) {
+    .jkf-backtop {
+      transition: opacity 0.01ms ease;
+      transform: none;
+    }
+  }
+</style>
+
+<button type="button" class="jkf-backtop" id="jkfBacktop" aria-label="返回顶部" title="返回顶部">
+  <i class="bi bi-arrow-up" aria-hidden="true"></i>
+</button>
+
+<script>
+  /**
+   * 返回顶部按钮交互脚本
+   * 职责：
+   *   1. 监听 window 滚动，超过阈值后按钮淡入显示（rAF 节流避免抖动）
+   *   2. 点击按钮以 ease-out cubic 动画平滑滚回顶部（尊重 prefers-reduced-motion）
+   */
+  (function () {
+    "use strict";
+
+    /** 按钮 DOM */
+    var btn = document.getElementById("jkfBacktop");
+    if (!btn) return;
+
+    /** 滚动超过此阈值（px）才显示按钮，避免顶部就出现 */
+    var SHOW_THRESHOLD = 300;
+    /** 平滑滚动动画时长（ms） */
+    var SCROLL_DURATION = 450;
+
+    /** 用户是否偏好减少动画（一次性读取，后续不变） */
+    var reduceMotion = window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    /** rAF 节流标志，避免 scroll 事件高频触发回流 */
+    var ticking = false;
+
+    /**
+     * 滚动事件处理：根据 scrollY 切换 is-visible 类名
+     * 用 requestAnimationFrame 节流，一帧内只计算一次
+     */
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () {
+        ticking = false;
+        var shouldShow = (window.scrollY || window.pageYOffset) > SHOW_THRESHOLD;
+        btn.classList.toggle("is-visible", shouldShow);
+      });
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+
+    /**
+     * 平滑滚动到顶部
+     * 使用 ease-out cubic 缓动函数，从当前 scrollY 动画到 0
+     * 若用户偏好减少动画则瞬时跳转
+     */
+    function scrollToTop() {
+      var startY = window.scrollY || window.pageYOffset;
+      if (startY <= 0) return;
+      if (reduceMotion) {
+        window.scrollTo(0, 0);
+        return;
+      }
+      var startTime = 0;
+      /**
+       * 单帧动画步进
+       * @param {number} now - performance.now() 时间戳
+       */
+      function step(now) {
+        if (!startTime) startTime = now;
+        var elapsed = now - startTime;
+        var t = Math.min(elapsed / SCROLL_DURATION, 1);
+        // ease-out cubic：开始快、结束慢，接近顶部时减速
+        var ease = 1 - Math.pow(1 - t, 3);
+        window.scrollTo(0, startY * (1 - ease));
+        if (t < 1) {
+          window.requestAnimationFrame(step);
+        } else {
+          // 动画结束，强制精确到顶（避免浮点余量）
+          window.scrollTo(0, 0);
+        }
+      }
+      window.requestAnimationFrame(step);
+    }
+
+    btn.addEventListener("click", scrollToTop);
+  })();
+</script>

@@ -1,0 +1,390 @@
+{% load static %}
+<!-- 国家语言切换器组件：依赖 Bootstrap 5.3 dropdown + Bootstrap Icons -->
+<!-- 国家切换 → 持久化 + 触发 window 事件 jkfCountryChange（供首页等监听者拉取数据） -->
+<!-- 语言切换 → 调用 jkfI18n.setLang 应用翻译，并同步更新本组件显示 -->
+<!-- 国家与语言独立切换（用户可任意组合） -->
+
+<style>
+  /* === 国家语言切换器样式（JKF 深色主题）=== */
+  :root {
+    --jkf-switcher-text: #f0f0f0;
+    --jkf-switcher-hover: #ffc107;
+    --jkf-switcher-divider: #3a3a3a;
+    --jkf-switcher-dropdown-bg: #2a2a2a;
+    --jkf-switcher-dropdown-hover: #3a3a3a;
+    --jkf-switcher-transition: 200ms;
+  }
+
+  .jkf-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .jkf-switcher__btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--jkf-switcher-text);
+    font-size: 0.85rem;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 36px;
+    transition: background var(--jkf-switcher-transition) ease, color var(--jkf-switcher-transition) ease;
+    white-space: nowrap;
+  }
+  .jkf-switcher__btn::after { content: none; } /* 移除 Bootstrap dropdown 默认箭头 */
+  .jkf-switcher__btn:hover,
+  .jkf-switcher__btn.show {
+    background: rgba(255, 193, 7, 0.12);
+    color: var(--jkf-switcher-hover);
+  }
+  .jkf-switcher__btn:focus-visible {
+    outline: 2px solid var(--jkf-switcher-hover);
+    outline-offset: 1px;
+  }
+
+  .jkf-switcher__flag { font-size: 1rem; line-height: 1; }
+  .jkf-switcher__icon { font-size: 0.95rem; }
+  .jkf-switcher__label {
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .jkf-switcher__caret {
+    font-size: 0.65rem;
+    transition: transform var(--jkf-switcher-transition) ease;
+  }
+  .jkf-switcher__btn.show .jkf-switcher__caret { transform: rotate(180deg); }
+
+  /* 下拉菜单（深色主题） */
+  .jkf-switcher__menu {
+    background: var(--jkf-switcher-dropdown-bg);
+    border: 1px solid var(--jkf-switcher-divider);
+    border-radius: 6px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    padding: 4px 0;
+    min-width: 160px;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .jkf-switcher__menu .dropdown-item {
+    color: var(--jkf-switcher-text);
+    font-size: 0.85rem;
+    padding: 8px 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background var(--jkf-switcher-transition) ease, color var(--jkf-switcher-transition) ease;
+  }
+  .jkf-switcher__menu .dropdown-item:hover,
+  .jkf-switcher__menu .dropdown-item:focus {
+    background: var(--jkf-switcher-dropdown-hover);
+    color: var(--jkf-switcher-hover);
+  }
+  .jkf-switcher__menu .dropdown-item.is-active {
+    background: rgba(255, 193, 7, 0.15);
+    color: var(--jkf-switcher-hover);
+    font-weight: 600;
+  }
+  .jkf-switcher__menu .dropdown-item.is-active::after {
+    content: "\2713"; /* 勾选标记 ✓ */
+    margin-left: auto;
+    font-size: 0.85rem;
+  }
+
+  /* 移动端：按钮压缩为图标/国旗，隐藏文字标签与箭头 */
+  /* min-width/min-height 40px 接近 WCAG 触摸目标 44px，平衡空间与可用性 */
+  @media (max-width: 991.98px) {
+    .jkf-switcher__btn {
+      padding: 6px;
+      min-width: 40px;
+      min-height: 40px;
+      justify-content: center;
+    }
+    .jkf-switcher__label,
+    .jkf-switcher__caret { display: none; }
+  }
+  /* 超小屏：dropdown 菜单限制最大宽度，避免溢出视口 */
+  @media (max-width: 575.98px) {
+    .jkf-switcher__menu {
+      min-width: 140px;
+      max-width: calc(100vw - 24px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+
+<div class="jkf-switcher" id="jkfSwitcher">
+  <!-- 国家下拉 -->
+  <div class="dropdown jkf-switcher__item">
+    <button class="jkf-switcher__btn dropdown-toggle" type="button"
+            id="jkfCountryBtn" data-bs-toggle="dropdown"
+            aria-haspopup="true" aria-expanded="false"
+            data-i18n-aria="switch.aria_country">
+      <span class="jkf-switcher__flag" id="jkfCountryFlag">🇨🇳</span>
+      <span class="jkf-switcher__label" id="jkfCountryLabel">中国</span>
+      <i class="bi bi-chevron-down jkf-switcher__caret" aria-hidden="true"></i>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end jkf-switcher__menu"
+        id="jkfCountryMenu" aria-labelledby="jkfCountryBtn"></ul>
+  </div>
+
+  <!-- 语言下拉（仅单语言时隐藏） -->
+  <div class="dropdown jkf-switcher__item" id="jkfLangDropdown" style="display:none">
+    <button class="jkf-switcher__btn dropdown-toggle" type="button"
+            id="jkfLangBtn" data-bs-toggle="dropdown"
+            aria-haspopup="true" aria-expanded="false"
+            data-i18n-aria="switch.aria_language">
+      <i class="bi bi-translate jkf-switcher__icon" aria-hidden="true"></i>
+      <span class="jkf-switcher__label" id="jkfLangLabel">中文</span>
+      <i class="bi bi-chevron-down jkf-switcher__caret" aria-hidden="true"></i>
+    </button>
+    <ul class="dropdown-menu dropdown-menu-end jkf-switcher__menu"
+        id="jkfLangMenu" aria-labelledby="jkfLangBtn"></ul>
+  </div>
+</div>
+
+<script>
+  /**
+   * 国家语言切换器交互脚本
+   * 职责：
+   *   1. 渲染国家 / 语言下拉列表
+   *   2. 切换国家时持久化 + 触发 window 事件 jkfCountryChange
+   *   3. 切换语言时调用 jkfI18n.setLang 应用翻译，并同步更新本组件显示
+   *   4. 启动时从 localStorage 恢复国家选择
+   *   5. 监听 i18n 语言变化，重渲染菜单与按钮
+   */
+  (function () {
+    "use strict";
+
+    /** 支持的国家列表（code + 国旗 emoji，国名从 i18n 字典取）
+     *  新增国家：在此数组追加 { code: "XX", flag: "🇽🇽" }，
+     *  并在 SexyChatWeb/data/ 下创建对应的 XX.json 数据文件即可。
+     */
+    const COUNTRIES = [
+      { code: "CN", flag: "🇨🇳" },
+      { code: "JP", flag: "🇯🇵" },
+      { code: "PK", flag: "🇵🇰" },
+      { code: "RU", flag: "🇷🇺" }
+    ];
+
+    /** 支持的语言列表（仅中文） */
+    const LANGS = [
+      { code: "zh", i18nKey: "switch.lang_zh" }
+    ];
+
+    /** 国家选择 localStorage key */
+    const STORAGE_KEY_COUNTRY = "jkf-country";
+    /** 默认国家 */
+    const DEFAULT_COUNTRY = "CN";
+
+    /** DOM 引用 */
+    const countryFlagEl  = document.getElementById("jkfCountryFlag");
+    const countryLabelEl = document.getElementById("jkfCountryLabel");
+    const countryMenuEl  = document.getElementById("jkfCountryMenu");
+    const langLabelEl    = document.getElementById("jkfLangLabel");
+    const langMenuEl     = document.getElementById("jkfLangMenu");
+
+    /** 当前国家（启动时从 localStorage 读取） */
+    let _currentCountry = _loadCountry();
+
+    /**
+     * 从 localStorage 读取国家偏好
+     * @returns {string} 国家代码
+     */
+    function _loadCountry() {
+      try {
+        const c = localStorage.getItem(STORAGE_KEY_COUNTRY);
+        if (COUNTRIES.some(function (item) { return item.code === c; })) return c;
+      } catch (e) { /* 忽略，用默认 */ }
+      return DEFAULT_COUNTRY;
+    }
+
+    /**
+     * 持久化国家选择
+     * @param {string} code
+     */
+    function _saveCountry(code) {
+      try { localStorage.setItem(STORAGE_KEY_COUNTRY, code); } catch (e) {}
+    }
+
+    /**
+     * 取国家显示名（按当前语言，从 i18n 字典读取）
+     * @param {string} code - 国家代码
+     * @returns {string}
+     */
+    function getCountryName(code) {
+      if (window.jkfI18n && typeof window.jkfI18n.t === "function") {
+        return window.jkfI18n.t("country." + code);
+      }
+      return code;
+    }
+
+    /**
+     * 取语言显示名（按当前语言）
+     * @param {string} code - 语言代码
+     * @returns {string}
+     */
+    function getLangName(code) {
+      if (window.jkfI18n && typeof window.jkfI18n.t === "function") {
+        return window.jkfI18n.t("switch.lang_" + code);
+      }
+      return code;
+    }
+
+    /**
+     * 渲染国家下拉菜单
+     */
+    function renderCountryMenu() {
+      if (!countryMenuEl) return;
+      const html = COUNTRIES.map(function (item) {
+        const isActive = item.code === _currentCountry ? " is-active" : "";
+        return '<li><a class="dropdown-item' + isActive + '" href="#" data-country="' + item.code + '">'
+          + '<span class="jkf-switcher__flag">' + item.flag + '</span>'
+          + '<span data-i18n="country.' + item.code + '">' + getCountryName(item.code) + '</span>'
+          + '</a></li>';
+      }).join("");
+      countryMenuEl.innerHTML = html;
+    }
+
+    /**
+     * 渲染语言下拉菜单
+     */
+    function renderLangMenu() {
+      if (!langMenuEl) return;
+      const currentLang = (window.jkfI18n && window.jkfI18n.getLang()) || "zh";
+      const html = LANGS.map(function (item) {
+        const isActive = item.code === currentLang ? " is-active" : "";
+        return '<li><a class="dropdown-item' + isActive + '" href="#" data-lang="' + item.code + '">'
+          + '<span data-i18n="' + item.i18nKey + '">' + getLangName(item.code) + '</span>'
+          + '</a></li>';
+      }).join("");
+      langMenuEl.innerHTML = html;
+    }
+
+    /**
+     * 更新国家按钮显示（国旗 + 国名）
+     */
+    function updateCountryButton() {
+      const country = COUNTRIES.find(function (item) { return item.code === _currentCountry; });
+      if (!country) return;
+      if (countryFlagEl) countryFlagEl.textContent = country.flag;
+      if (countryLabelEl) countryLabelEl.textContent = getCountryName(country.code);
+    }
+
+    /**
+     * 更新语言按钮显示
+     */
+    function updateLangButton() {
+      const currentLang = (window.jkfI18n && window.jkfI18n.getLang()) || "zh";
+      if (langLabelEl) langLabelEl.textContent = getLangName(currentLang);
+    }
+
+    /**
+     * 关闭指定 dropdown
+     * @param {string} btnId - 触发按钮 DOM id
+     */
+    function hideDropdown(btnId) {
+      const btn = document.getElementById(btnId);
+      if (!btn || !window.bootstrap) return;
+      const inst = window.bootstrap.Dropdown.getInstance(btn);
+      if (inst) inst.hide();
+    }
+
+    /**
+     * 选择国家：持久化 + 更新 UI + 触发事件
+     * @param {string} code
+     */
+    function selectCountry(code) {
+      if (!COUNTRIES.some(function (item) { return item.code === code; })) return;
+      if (code === _currentCountry) return;
+      _currentCountry = code;
+      _saveCountry(code);
+      updateCountryButton();
+      renderCountryMenu();
+      // 触发自定义事件，供首页等监听者重新拉取数据
+      window.dispatchEvent(new CustomEvent("jkfCountryChange", { detail: { country: code } }));
+    }
+
+    /**
+     * 选择语言：调用 i18n 应用翻译 + 同步本组件 UI
+     * @param {string} code
+     */
+    function selectLang(code) {
+      if (window.jkfI18n && typeof window.jkfI18n.setLang === "function") {
+        window.jkfI18n.setLang(code);
+      }
+      updateLangButton();
+      renderLangMenu();
+      // 国家名也会随语言变化，需要同步更新
+      updateCountryButton();
+      renderCountryMenu();
+    }
+
+    /** 事件委托：国家菜单点击 */
+    if (countryMenuEl) {
+      countryMenuEl.addEventListener("click", function (event) {
+        event.preventDefault();
+        const item = event.target.closest("a[data-country]");
+        if (!item) return;
+        selectCountry(item.getAttribute("data-country"));
+        hideDropdown("jkfCountryBtn");
+      });
+    }
+
+    /** 事件委托：语言菜单点击 */
+    if (langMenuEl) {
+      langMenuEl.addEventListener("click", function (event) {
+        event.preventDefault();
+        const item = event.target.closest("a[data-lang]");
+        if (!item) return;
+        selectLang(item.getAttribute("data-lang"));
+        hideDropdown("jkfLangBtn");
+      });
+    }
+
+    /** 监听 i18n 语言变化：同步更新按钮和菜单（外部切换器或代码切换时也能感知） */
+    if (window.jkfI18n && typeof window.jkfI18n.onLanguageChange === "function") {
+      window.jkfI18n.onLanguageChange(function () {
+        updateCountryButton();
+        updateLangButton();
+        renderCountryMenu();
+        renderLangMenu();
+      });
+    }
+
+    // 初始化渲染
+    updateCountryButton();
+    updateLangButton();
+    renderCountryMenu();
+    renderLangMenu();
+
+    // ==============================================================
+    //  语言切换器显隐：仅当支持多种语言时显示
+    // ==============================================================
+    var langDropdownEl = document.getElementById("jkfLangDropdown");
+    if (langDropdownEl && LANGS.length > 1) {
+      langDropdownEl.style.display = "";
+    }
+
+    // ==============================================================
+    //  暴露 API 供外部调用
+    // ==============================================================
+    window.jkfSwitcher = {
+      getCountry: function () { return _currentCountry; },
+      setCountry: selectCountry,
+      getLang: function () { return (window.jkfI18n && window.jkfI18n.getLang()) || "zh"; },
+      setLang: selectLang
+    };
+  })();
+</script>

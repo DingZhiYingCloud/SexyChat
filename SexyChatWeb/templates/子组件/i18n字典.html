@@ -1,0 +1,238 @@
+{% load static %}
+<!-- i18n 国际化字典组件：负责中英文文案翻译与语言切换
+     暴露 window.jkfI18n = { t, apply, getLang, setLang, onLanguageChange, supportedLangs }
+     约定：
+       - 纯文本元素直接加 data-i18n="key"
+       - 输入框 placeholder 用 data-i18n-placeholder="key"
+       - aria-label 用 data-i18n-aria="key"
+       - title 用 data-i18n-title="key"
+       - 带图标的链接文本用 <span data-i18n="key">包起来
+     语言持久化到 localStorage，DOMContentLoaded 后自动应用一次
+-->
+
+<script>
+  /**
+   * i18n 国际化字典与切换控制器
+   * 职责：维护中英文字典、遍历 data-i18n 元素更新文案、对外暴露切换 API
+   * 不依赖任何外部库，原生 ES6+ 实现
+   */
+  (function () {
+    "use strict";
+
+    /** localStorage 存储 key */
+    const STORAGE_KEY_LANG = "jkf-lang";
+    /** 默认语言 */
+    const DEFAULT_LANG = "zh";
+    /** 支持的语言列表（仅中文） */
+    const SUPPORTED_LANGS = ["zh"];
+
+    /**
+     * 中英文字典
+     * 命名约定：<模块>.<字段>，便于检索
+     * 商品卡片标题等动态业务文案不在此字典中（由后端按 lang 返回或保持中文）
+     */
+    const I18N_DICT = {
+      zh: {
+        // 顶部导航栏
+        "nav.brand": "SexyChat",
+        "nav.cooperate": "合作",
+        "nav.login": "登录",
+        "nav.more": "更多",
+        "nav.expand": "展开导航菜单",
+        "nav.aria_main": "主导航",
+
+        // 登录弹窗
+        "login.title": "账号登录",
+        "login.brand_title": "使用 WhatsApp 登录",
+        "login.brand_subtitle": "当前仅支持 WhatsApp 登录，更多方式敬请期待",
+        "login.tab_qr": "扫码登录",
+        "login.tab_phone": "号码登录",
+        "login.qr_tip": "打开 WhatsApp → 设置 → 关联设备 → 扫描上方二维码",
+        "login.qr_refresh": "刷新二维码",
+        "login.qr_alt": "WhatsApp 登录二维码",
+        "login.phone_placeholder": "请输入 WhatsApp 号码",
+        "login.country_code_label": "国家区号",
+        "login.submit": "发送验证码",
+        "login.submit_sending": "发送中...",
+        "login.hint": "未注册的号码将自动创建账号",
+        "login.error_empty": "请输入 WhatsApp 号码",
+        "login.error_format": "号码格式不正确，请检查后重试",
+        "login.aria_close": "关闭",
+        "login.aria_login_way": "登录方式切换",
+
+        // 国家语言切换器
+        "switch.country": "国家",
+        "switch.language": "语言",
+        "switch.aria_country": "选择国家",
+        "switch.aria_language": "选择语言",
+        "switch.lang_zh": "中文",
+        "switch.lang_en": "English",
+
+        // 国家名称（供国家语言切换器下拉项显示）
+        // 新增国家后，在此追加对应翻译条目
+        "country.CN": "中国",
+        "country.HK": "中国香港",
+        "country.TW": "中国台湾",
+        "country.JP": "日本",
+        "country.PK": "巴基斯坦",
+        "country.RU": "俄罗斯",
+        "country.SG": "新加坡",
+        "country.MY": "马来西亚",
+        "country.US": "美国",
+        "country.CA": "加拿大",
+        "country.AU": "澳大利亚",
+        "country.GB": "英国",
+
+        // 商品卡片列表
+        "card.empty": "暂无数据",
+        "card.loading": "加载中...",
+        "card.loading_more": "加载更多…",
+        "card.login_prompt_text": "登录后查看更多精彩内容",
+        "card.login_prompt_btn": "立即登录",
+        "hero.badge": "尊享体验",
+        "hero.title": "欢迎来到",
+        "hero.brand": "SexyChat",
+        "hero.subtitle": "登录后即可解锁更多精彩内容",
+        "hero.login_btn": "立即登录",
+
+        // 首页
+        "home.recommend": "推荐内容"
+      }
+    };
+
+    /** 当前语言（启动时从 localStorage 读取） */
+    let _currentLang = _loadLang();
+    /** 语言切换回调列表 */
+    const _callbacks = [];
+
+    /**
+     * 从 localStorage 读取语言偏好
+     * 异常时回退到默认语言（隐私模式 / localStorage 禁用）
+     * @returns {string}
+     */
+    function _loadLang() {
+      try {
+        const lang = localStorage.getItem(STORAGE_KEY_LANG);
+        if (SUPPORTED_LANGS.indexOf(lang) >= 0) return lang;
+      } catch (e) { /* localStorage 不可用时忽略，用默认 */ }
+      return DEFAULT_LANG;
+    }
+
+    /**
+     * 持久化语言偏好
+     * @param {string} lang
+     */
+    function _saveLang(lang) {
+      try {
+        localStorage.setItem(STORAGE_KEY_LANG, lang);
+      } catch (e) { /* 忽略写入失败 */ }
+    }
+
+    /**
+     * 按 key 取当前语言文案
+     * @param {string} key - 字典 key
+     * @returns {string} 翻译文案，缺失时回退到默认语言，仍缺失则返回 key 本身
+     */
+    function t(key) {
+      const cur = I18N_DICT[_currentLang] || {};
+      const def = I18N_DICT[DEFAULT_LANG] || {};
+      return cur[key] || def[key] || key;
+    }
+
+    /**
+     * 遍历 DOM 应用当前语言的所有翻译
+     * 覆盖：data-i18n / data-i18n-placeholder / data-i18n-aria / data-i18n-title
+     */
+    function _applyTranslations() {
+      const nodes = document.querySelectorAll("[data-i18n]");
+      nodes.forEach(function (node) {
+        const key = node.getAttribute("data-i18n");
+        const text = t(key);
+        if (text) node.textContent = text;
+      });
+
+      const phNodes = document.querySelectorAll("[data-i18n-placeholder]");
+      phNodes.forEach(function (node) {
+        const key = node.getAttribute("data-i18n-placeholder");
+        node.setAttribute("placeholder", t(key));
+      });
+
+      const ariaNodes = document.querySelectorAll("[data-i18n-aria]");
+      ariaNodes.forEach(function (node) {
+        const key = node.getAttribute("data-i18n-aria");
+        node.setAttribute("aria-label", t(key));
+      });
+
+      const titleNodes = document.querySelectorAll("[data-i18n-title]");
+      titleNodes.forEach(function (node) {
+        const key = node.getAttribute("data-i18n-title");
+        node.setAttribute("title", t(key));
+      });
+
+      // 同步 <html lang> 属性，便于 SEO 与辅助技术
+      document.documentElement.setAttribute("lang", _currentLang === "zh" ? "zh-CN" : "en");
+    }
+
+    /**
+     * 应用指定语言
+     * @param {string} lang - 目标语言代码（zh/en）
+     */
+    function apply(lang) {
+      if (SUPPORTED_LANGS.indexOf(lang) < 0) return;
+      const changed = lang !== _currentLang;
+      _currentLang = lang;
+      _saveLang(lang);
+      _applyTranslations();
+      if (changed) {
+        _callbacks.forEach(function (fn) {
+          try { fn(_currentLang); } catch (e) { /* 单个回调异常不影响其他 */ }
+        });
+      }
+    }
+
+    /**
+     * 获取当前语言
+     * @returns {string}
+     */
+    function getLang() {
+      return _currentLang;
+    }
+
+    /**
+     * 设置并应用语言（apply 的语义化别名）
+     * @param {string} lang
+     */
+    function setLang(lang) {
+      apply(lang);
+    }
+
+    /**
+     * 注册语言切换回调
+     * @param {Function} fn - 回调签名 (lang) => void
+     */
+    function onLanguageChange(fn) {
+      if (typeof fn === "function") _callbacks.push(fn);
+    }
+
+    /** DOM 就绪后应用一次初始语言 */
+    function _init() {
+      _applyTranslations();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", _init);
+    } else {
+      _init();
+    }
+
+    // 暴露 API
+    window.jkfI18n = {
+      t: t,
+      apply: apply,
+      getLang: getLang,
+      setLang: setLang,
+      onLanguageChange: onLanguageChange,
+      supportedLangs: SUPPORTED_LANGS
+    };
+  })();
+</script>
