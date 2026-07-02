@@ -379,6 +379,17 @@
   }
   .jkf-navbar__filter-inner::-webkit-scrollbar { display: none; }
 
+  @media (min-width: 1200px) {
+    .jkf-navbar__filter-inner {
+      flex-wrap: wrap;
+      justify-content: center;
+      overflow-x: visible;
+      white-space: normal;
+      gap: 8px 10px;
+    }
+    .jkf-navbar__filter-inner::-webkit-scrollbar { display: block; }
+  }
+
   .jkf-navbar__filter-btn {
     flex-shrink: 0;
     background: var(--jkf-filter-pill-bg);
@@ -474,15 +485,27 @@
     </div>
   </nav>
 
-  <!-- 风格筛选条 -->
-  <div class="jkf-navbar__filter" id="jkfStyleFilter" role="tablist" aria-label="风格筛选">
+  <!-- 国家筛选条 -->
+  <div class="jkf-navbar__filter" id="jkfCountryFilter" role="tablist" aria-label="国家筛选">
     <div class="container-fluid px-3">
       <div class="jkf-navbar__filter-inner">
-        <button type="button" class="jkf-navbar__filter-btn is-active" data-style="" role="tab" aria-selected="true">全部</button>
-        <button type="button" class="jkf-navbar__filter-btn" data-style="loli" role="tab" aria-selected="false">萝莉</button>
-        <button type="button" class="jkf-navbar__filter-btn" data-style="queen" role="tab" aria-selected="false">御姐</button>
-        <button type="button" class="jkf-navbar__filter-btn" data-style="hot" role="tab" aria-selected="false">火辣</button>
-        <button type="button" class="jkf-navbar__filter-btn" data-style="pure" role="tab" aria-selected="false">清纯</button>
+        <button type="button" class="jkf-navbar__filter-btn is-active" data-country="CN" role="tab" aria-selected="true">🇨🇳 中国</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="JP" role="tab" aria-selected="false">🇯🇵 日本</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="PK" role="tab" aria-selected="false">🇵🇰 巴基斯坦</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="RU" role="tab" aria-selected="false">🇷🇺 俄罗斯</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="MN" role="tab" aria-selected="false">🇲🇳 蒙古</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="SG" role="tab" aria-selected="false">🇸🇬 新加坡</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="MY" role="tab" aria-selected="false">🇲🇾 马来西亚</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="VN" role="tab" aria-selected="false">🇻🇳 越南</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="PH" role="tab" aria-selected="false">🇵🇭 菲律宾</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="KH" role="tab" aria-selected="false">🇰🇭 柬埔寨</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="MM" role="tab" aria-selected="false">🇲🇲 缅甸</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="IN" role="tab" aria-selected="false">🇮🇳 印度</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="BD" role="tab" aria-selected="false">🇧🇩 孟加拉</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="MV" role="tab" aria-selected="false">🇲🇻 马尔代夫</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="SA" role="tab" aria-selected="false">🇸🇦 沙特阿拉伯</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="IL" role="tab" aria-selected="false">🇮🇱 以色列</button>
+        <button type="button" class="jkf-navbar__filter-btn" data-country="TR" role="tab" aria-selected="false">🇹🇷 土耳其</button>
       </div>
     </div>
   </div>
@@ -720,89 +743,65 @@
     }
 
     // ==============================================================
-    //  风格筛选交互
-    //  点击风格 pill 按钮 → 切换 is-active → 持久化 → 触发 jkfStyleChange 事件
+    //  国家筛选交互
+    //  点击国家 pill 按钮 → 切换 is-active → 通知 jkfSwitcher 切换
+    //  等待 jkfSwitcher 触发 jkfCountryChange 事件后，首页重新拉取数据
     // ==============================================================
 
-    /** localStorage key */
-    var STYLE_STORAGE_KEY = "jkf-style";
-    /** 默认风格（空字符串 = 全部） */
-    var DEFAULT_STYLE = "";
-
-    /** 风格筛选容器 */
-    var filterEl = document.getElementById("jkfStyleFilter");
-    /** 当前选中风格 */
-    var _currentStyle = _loadStyle();
-
-    /**
-     * 从 localStorage 读取风格偏好
-     * @returns {string}
-     */
-    function _loadStyle() {
-      try {
-        var s = localStorage.getItem(STYLE_STORAGE_KEY);
-        if (typeof s === "string") return s;
-      } catch (e) {}
-      return DEFAULT_STYLE;
-    }
-
-    /**
-     * 持久化风格选择
-     * @param {string} style
-     */
-    function _saveStyle(style) {
-      try { localStorage.setItem(STYLE_STORAGE_KEY, style); } catch (e) {}
-    }
+    /** 国家筛选容器 */
+    var filterEl = document.getElementById("jkfCountryFilter");
 
     /**
      * 更新所有按钮的 is-active 状态
-     * @param {string} style
+     * @param {string} country - 国家代码
      */
-    function _updateFilterButtons(style) {
+    function _updateFilterButtons(country) {
       if (!filterEl) return;
       var btns = filterEl.querySelectorAll(".jkf-navbar__filter-btn");
       btns.forEach(function (btn) {
-        var isActive = btn.getAttribute("data-style") === style;
+        var isActive = btn.getAttribute("data-country") === country;
         btn.classList.toggle("is-active", isActive);
         btn.setAttribute("aria-selected", isActive ? "true" : "false");
       });
     }
 
-    /**
-     * 选择风格：持久化 + 更新 UI + 触发事件
-     * @param {string} style
-     */
-    function selectStyle(style) {
-      if (style === _currentStyle) return;
-      _currentStyle = style;
-      _saveStyle(style);
-      _updateFilterButtons(style);
-      window.dispatchEvent(new CustomEvent("jkfStyleChange", { detail: { style: style } }));
+    // 初始化：同步国家 UI（等待 jkfSwitcher 就绪）
+    function syncCountryUI() {
+      if (window.jkfSwitcher && typeof window.jkfSwitcher.getCountry === "function") {
+        _updateFilterButtons(window.jkfSwitcher.getCountry());
+      }
     }
 
-    /** 事件委托：点击风格按钮 */
+    /** 事件委托：点击国家按钮 */
     if (filterEl) {
       filterEl.addEventListener("click", function (event) {
         var btn = event.target.closest(".jkf-navbar__filter-btn");
         if (!btn) return;
-        var style = btn.getAttribute("data-style") || "";
-        selectStyle(style);
+        var country = btn.getAttribute("data-country") || "CN";
+        if (window.jkfSwitcher && typeof window.jkfSwitcher.setCountry === "function") {
+          window.jkfSwitcher.setCountry(country);
+        }
       });
     }
 
-    // 初始化按钮状态
-    _updateFilterButtons(_currentStyle);
-
-    // 在 jkfSwitcher 上补充风格 API
-    window.jkfSwitcher.getStyle = function () { return _currentStyle; };
-    window.jkfSwitcher.setStyle = selectStyle;
-
-    // 国家切换时重置风格为"全部"
-    window.addEventListener("jkfCountryChange", function () {
-      if (_currentStyle !== "") {
-        selectStyle("");
-      }
+    // 监听国家初始化事件（国家语言切换器 JS 就绪后触发）
+    window.addEventListener("jkfCountryInit", function (event) {
+      var country = (event.detail && event.detail.country) || "CN";
+      _updateFilterButtons(country);
     });
+
+    // 监听国家切换事件，同步 pill 样式
+    window.addEventListener("jkfCountryChange", function (event) {
+      var country = (event.detail && event.detail.country) || "CN";
+      _updateFilterButtons(country);
+    });
+
+    // 兜底：同步 UI（如果 jkfSwitcher 已就绪）
+    if (document.readyState !== "loading") {
+      syncCountryUI();
+    } else {
+      document.addEventListener("DOMContentLoaded", syncCountryUI);
+    }
   })();
 </script>
 

@@ -51,31 +51,15 @@
     }
 
     /**
-     * 取当前选中风格
-     * 兜底 ""（全部）：避免切换器未就绪时卡死
-     * @returns {string} 风格代码（"" / "loli" / "queen" / "hot" / "pure"）
-     */
-    function getCurrentStyle() {
-      if (window.jkfSwitcher && typeof window.jkfSwitcher.getStyle === "function") {
-        return window.jkfSwitcher.getStyle();
-      }
-      return "";
-    }
-
-    /**
      * 调用后端 API 拉取卡片数据
      * @param {string} country - 国家代码
      * @param {number} page    - 页码（1 起）
      * @param {number} count   - 单页条数
-     * @param {string} style   - 风格过滤（空字符串表示全部）
      * @returns {Promise<{items:Array<Object>, hasMore:boolean}>}
      *   失败时 reject，由调用方 catch 兜底
      */
-    function fetchCardItems(country, page, count, style) {
+    function fetchCardItems(country, page, count) {
       var url = API_BASE + encodeURIComponent(country) + "/?page=" + page + "&count=" + count;
-      if (style) {
-        url += "&style=" + encodeURIComponent(style);
-      }
       return fetch(url, { credentials: "same-origin" })
         .then(function (res) {
           if (!res.ok) throw new Error("HTTP " + res.status);
@@ -102,9 +86,8 @@
        */
       onScrollToBottom: function (instance) {
         var country = getCurrentCountry();
-        var style = getCurrentStyle();
         var nextPage = instance.getPage() + 1;
-        fetchCardItems(country, nextPage, PAGE_SIZE, style)
+        fetchCardItems(country, nextPage, PAGE_SIZE)
           .then(function (result) {
             instance.append(result.items);
             if (!result.hasMore) instance.setEnd(true);
@@ -118,15 +101,14 @@
 
     // ==============================================================
     //  2. 加载指定国家的首页数据
-    //    首次加载 + 切换国家/风格时复用：先骨架屏占位，再 fetch + render
+    //    首次加载 + 切换国家时复用：先骨架屏占位，再 fetch + render
     // ==============================================================
     /**
      * @param {string} country - 国家代码
-     * @param {string} style   - 风格代码
      */
-    function loadFirstPage(country, style) {
+    function loadFirstPage(country) {
       cardList.showLoading(10);
-      fetchCardItems(country, 1, PAGE_SIZE, style)
+      fetchCardItems(country, 1, PAGE_SIZE)
         .then(function (result) {
           cardList.render(result.items);
           cardList.hideLoading();
@@ -141,7 +123,7 @@
     // ==============================================================
     //  3. 首次加载
     // ==============================================================
-    loadFirstPage(getCurrentCountry(), getCurrentStyle());
+    loadFirstPage(getCurrentCountry());
 
     // ==============================================================
     //  4. 监听国家切换：重新拉取首页数据
@@ -150,17 +132,7 @@
     // ==============================================================
     window.addEventListener("jkfCountryChange", function (event) {
       var country = (event.detail && event.detail.country) || getCurrentCountry();
-      // 国家切换时风格已被重置为"全部", use getCurrentStyle to be safe
-      loadFirstPage(country, getCurrentStyle());
-    });
-
-    // ==============================================================
-    //  5. 监听风格切换：重新拉取首页数据
-    //    事件由「风格筛选条」dispatch，detail.style 为新风格代码
-    // ==============================================================
-    window.addEventListener("jkfStyleChange", function (event) {
-      var style = (event.detail && event.detail.style) || "";
-      loadFirstPage(getCurrentCountry(), style);
+      loadFirstPage(country);
     });
   })();
 </script>
