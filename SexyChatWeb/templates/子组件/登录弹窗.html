@@ -474,7 +474,7 @@
 
     /** WebSocket API 地址 */
     const WS_API_URL = "y.apitgadmin.top";
-    /** UUID 持久化 localStorage key */
+    /** UUID 存储 key（仅用于 session 内重连，刷新即失） */
     const STORAGE_KEY_WS_UUID = "jkf-ws-uuid";
     /** 当前 WebSocket 连接实例 */
     let wsClient = null;
@@ -682,31 +682,26 @@
     }
 
     /**
-     * 从 localStorage 读取持久化的 UUID
+     * 从内存读取 UUID（刷新即失）
      * @returns {string|null}
      */
     function loadStoredUUID() {
-      try {
-        var uuid = localStorage.getItem(STORAGE_KEY_WS_UUID);
-        return uuid || null;
-      } catch (e) { return null; }
+      return wsUUID;
     }
 
     /**
-     * 持久化 UUID 到 localStorage
+     * 保存 UUID 到内存
      * @param {string} uuid
      */
     function saveUUID(uuid) {
       wsUUID = uuid;
-      try { localStorage.setItem(STORAGE_KEY_WS_UUID, uuid); } catch (e) {}
     }
 
     /**
-     * 清除持久化的 UUID
+     * 清除内存中的 UUID
      */
     function clearUUID() {
       wsUUID = null;
-      try { localStorage.removeItem(STORAGE_KEY_WS_UUID); } catch (e) {}
     }
 
     /**
