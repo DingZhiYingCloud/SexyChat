@@ -391,9 +391,9 @@
             <div class="jkf-login__code-icon" style="font-size:2.5rem;color:var(--jkf-login-whatsapp);margin-bottom:12px;">
               <i class="bi bi-whatsapp"></i>
             </div>
-            <p style="font-size:1rem;font-weight:600;margin:0 0 4px;">请在你的 WhatsApp 中输入配对码</p>
+            <p style="font-size:1rem;font-weight:600;margin:0 0 4px;">请复制配对码并在 WhatsApp 中输入</p>
             <p style="color:var(--jkf-login-text-muted);font-size:0.85rem;margin:0 0 16px;">
-              打开 WhatsApp → 设置 → 关联设备 → 输入下方配对码
+              点击下方按钮复制配对码，自动打开 WhatsApp
             </p>
             <div class="jkf-login__code-display" id="jkfLoginCodeDisplay">------</div>
             <p class="jkf-login__copy-toast" id="jkfLoginCopyToast" style="display:none;color:var(--jkf-login-whatsapp);font-size:0.9rem;font-weight:500;margin:0 0 12px;">
@@ -678,8 +678,6 @@
       // 禁用扫码 Tab
       if (qrTab) { qrTab.disabled = true; qrTab.style.opacity = "0.4"; qrTab.style.cursor = "default"; }
       if (phoneTab) { phoneTab.disabled = true; phoneTab.style.opacity = "0.4"; phoneTab.style.cursor = "default"; }
-      // 自动打开 WhatsApp（手机浏览器）
-      window.location.href = "whatsapp://app";
     }
 
     /**
