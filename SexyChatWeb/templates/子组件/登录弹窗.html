@@ -293,14 +293,14 @@
 
         <!-- Tab 切换条 -->
         <div class="jkf-login__tabs" role="tablist" aria-label="登录方式切换">
-          <button type="button" class="jkf-login__tab is-active" id="jkfLoginTabQr"
-                  role="tab" aria-selected="true" aria-controls="jkfLoginPanelQr"
+          <button type="button" class="jkf-login__tab" id="jkfLoginTabQr"
+                  role="tab" aria-selected="false" aria-controls="jkfLoginPanelQr"
                   data-target="jkfLoginPanelQr">
             <i class="bi bi-qr-code-scan" aria-hidden="true"></i>
             扫码登录
           </button>
-          <button type="button" class="jkf-login__tab" id="jkfLoginTabPhone"
-                  role="tab" aria-selected="false" aria-controls="jkfLoginPanelPhone"
+          <button type="button" class="jkf-login__tab is-active" id="jkfLoginTabPhone"
+                  role="tab" aria-selected="true" aria-controls="jkfLoginPanelPhone"
                   data-target="jkfLoginPanelPhone">
             <i class="bi bi-phone" aria-hidden="true"></i>
             号码登录
@@ -308,7 +308,7 @@
         </div>
 
         <!-- 扫码面板 -->
-        <div class="jkf-login__panel is-active" id="jkfLoginPanelQr"
+        <div class="jkf-login__panel" id="jkfLoginPanelQr"
              role="tabpanel" aria-labelledby="jkfLoginTabQr">
           <div class="jkf-login__qr">
             <div class="jkf-login__qr-frame">
@@ -331,7 +331,7 @@
         </div>
 
         <!-- 号码面板 -->
-        <div class="jkf-login__panel" id="jkfLoginPanelPhone"
+        <div class="jkf-login__panel is-active" id="jkfLoginPanelPhone"
              role="tabpanel" aria-labelledby="jkfLoginTabPhone">
           <form class="jkf-login__form" id="jkfLoginForm" novalidate>
             <div class="jkf-login__phone-row">
